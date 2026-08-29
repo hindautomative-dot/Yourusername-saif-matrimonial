@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+matrimonial.db
+storage/private/profile_originals/*.jpg
+storage/private/payment_proofs/*.jpg
+storage/private/watermark_cache/*.jpg
+static/previews/*.jpg
+static/branding/*.jpg
+static/banners/*.jpg
+!storage/private/profile_originals/.gitkeep
+!storage/private/payment_proofs/.gitkeep
+!storage/private/watermark_cache/.gitkeep
+!static/previews/.gitkeep
+!static/branding/.gitkeep
+!static/banners/.gitkeep

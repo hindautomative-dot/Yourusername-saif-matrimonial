@@ -1,0 +1,1444 @@
+import os
+import io
+import re
+import math
+import secrets
+import sqlite3
+import time
+import hashlib
+from datetime import datetime, timedelta, date
+from functools import wraps
+
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    session, flash, g, abort, send_from_directory, send_file, Response
+)
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+from PIL import Image, ImageFilter, ImageOps, ImageDraw, ImageFont
+
+# ======================================================================
+# CONFIG
+# ======================================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATA_DIR = os.environ.get("DATA_DIR", BASE_DIR)
+
+DB_PATH = os.path.join(DATA_DIR, "matrimonial.db")
+PRIVATE_ORIGINALS_DIR = os.path.join(DATA_DIR, "storage", "private", "profile_originals")
+PRIVATE_PROOFS_DIR = os.path.join(DATA_DIR, "storage", "private", "payment_proofs")
+PRIVATE_WATERMARK_CACHE_DIR = os.path.join(DATA_DIR, "storage", "private", "watermark_cache")
+PREVIEW_DIR = os.path.join(BASE_DIR, "static", "previews")
+BRANDING_DIR = os.path.join(BASE_DIR, "static", "branding")
+BANNERS_DIR = os.path.join(BASE_DIR, "static", "banners")
+
+for d in (PRIVATE_ORIGINALS_DIR, PRIVATE_PROOFS_DIR, PRIVATE_WATERMARK_CACHE_DIR,
+          PREVIEW_DIR, BRANDING_DIR, BANNERS_DIR):
+    os.makedirs(d, exist_ok=True)
+
+ALLOWED_IMAGE_EXT = {"png", "jpg", "jpeg", "webp"}
+MAX_IMAGE_BYTES = 6 * 1024 * 1024  # 6 MB per image
+
+app = Flask(__name__)
+
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-this-secret-key")
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
+app.permanent_session_lifetime = timedelta(minutes=45)
+
+# ----------------------------------------------------------------------
+# Admin credentials (env only — never editable from the UI, on purpose)
+# ----------------------------------------------------------------------
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD_HASH = generate_password_hash(os.environ.get("ADMIN_PASSWORD", "changeme123"))
+
+# ----------------------------------------------------------------------
+# OTP delivery — pluggable. Default "console" backend just logs the OTP
+# to the server log (works everywhere, costs nothing, fine for a soft
+# launch / testing). Set OTP_PROVIDER=msg91 / fast2sms (and the matching
+# *_API_KEY env vars) to actually deliver real SMS. This is a single,
+# isolated function — plugging a real provider later is a contained
+# change, not a rewrite.
+# ----------------------------------------------------------------------
+OTP_PROVIDER = os.environ.get("OTP_PROVIDER", "console").lower()
+
+
+def send_otp_sms(phone, code):
+    if OTP_PROVIDER == "console":
+        app.logger.warning(f"[DEV OTP] Phone {phone} -> OTP {code} (configure OTP_PROVIDER for real SMS)")
+        return True, "console"
+    try:
+        import requests
+        if OTP_PROVIDER == "fast2sms":
+            api_key = os.environ.get("FAST2SMS_API_KEY")
+            if not api_key:
+                raise RuntimeError("FAST2SMS_API_KEY not set")
+            r = requests.post(
+                "https://www.fast2sms.com/dev/bulkV2",
+                headers={"authorization": api_key},
+                data={"route": "otp", "variables_values": code, "numbers": phone},
+                timeout=10,
+            )
+            return r.ok, r.text
+        if OTP_PROVIDER == "msg91":
+            api_key = os.environ.get("MSG91_API_KEY")
+            template_id = os.environ.get("MSG91_TEMPLATE_ID")
+            if not (api_key and template_id):
+                raise RuntimeError("MSG91_API_KEY / MSG91_TEMPLATE_ID not set")
+            r = requests.post(
+                "https://control.msg91.com/api/v5/otp",
+                headers={"authkey": api_key},
+                params={"template_id": template_id, "mobile": f"91{phone}", "otp": code},
+                timeout=10,
+            )
+            return r.ok, r.text
+        app.logger.warning(f"[OTP] Unknown OTP_PROVIDER={OTP_PROVIDER}; falling back to console log.")
+        app.logger.warning(f"[DEV OTP] Phone {phone} -> OTP {code}")
+        return True, "fallback-console"
+    except Exception as e:
+        app.logger.error(f"[OTP] Delivery failed via {OTP_PROVIDER}: {e}")
+        app.logger.warning(f"[DEV OTP] Phone {phone} -> OTP {code}")
+        return False, str(e)
+
+
+# ======================================================================
+# DATABASE
+# ======================================================================
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exception=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def _ensure_column(db, table, col, coltype):
+    cols = [r["name"] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
+    if col not in cols:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+
+
+def init_db():
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS profile_counter (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            next_val INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            age INTEGER NOT NULL,
+            gender TEXT NOT NULL,
+            city TEXT NOT NULL,
+            state TEXT,
+            marital_status TEXT,
+            education TEXT,
+            profession TEXT,
+            community TEXT,
+            sect TEXT,
+            mother_tongue TEXT,
+            height TEXT,
+            income TEXT,
+            work_location TEXT,
+            family_details TEXT,
+            bio TEXT,
+            contact_number TEXT,
+            contact_visible INTEGER DEFAULT 1,
+            admin_verified INTEGER DEFAULT 0,
+            phone_verified INTEGER DEFAULT 0,
+            photo_reviewed INTEGER DEFAULT 0,
+            photo_original_name TEXT,
+            photo_preview_name TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS unlock_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_code TEXT UNIQUE NOT NULL,
+            profile_id INTEGER NOT NULL,
+            user_name TEXT,
+            user_phone TEXT NOT NULL,
+            payment_proof_name TEXT,
+            message TEXT,
+            status TEXT DEFAULT 'pending',
+            requested_at TEXT NOT NULL,
+            decided_at TEXT,
+            FOREIGN KEY (profile_id) REFERENCES profiles (id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS banners (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slot TEXT NOT NULL,
+            title TEXT,
+            link_url TEXT,
+            image_name TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            start_date TEXT,
+            end_date TEXT,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS otp_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT NOT NULL,
+            code_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            attempts INTEGER DEFAULT 0,
+            consumed INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS admin_activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_username TEXT,
+            action TEXT,
+            detail TEXT,
+            ip TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_profiles_code ON profiles(profile_code);
+        CREATE INDEX IF NOT EXISTS idx_profiles_active ON profiles(is_active);
+        CREATE INDEX IF NOT EXISTS idx_requests_status ON unlock_requests(status);
+        CREATE INDEX IF NOT EXISTS idx_requests_phone ON unlock_requests(user_phone);
+        CREATE INDEX IF NOT EXISTS idx_requests_profile ON unlock_requests(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_requests_requested_at ON unlock_requests(requested_at);
+        CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_codes(phone);
+        CREATE INDEX IF NOT EXISTS idx_banners_slot ON banners(slot);
+        """
+    )
+    db.execute("INSERT OR IGNORE INTO profile_counter (id, next_val) VALUES (1, 10001)")
+
+    for col, coltype in [
+        ("state", "TEXT"), ("sect", "TEXT"), ("mother_tongue", "TEXT"), ("height", "TEXT"),
+        ("income", "TEXT"), ("work_location", "TEXT"), ("family_details", "TEXT"),
+        ("contact_visible", "INTEGER"), ("admin_verified", "INTEGER"),
+        ("phone_verified", "INTEGER"), ("photo_reviewed", "INTEGER"),
+    ]:
+        _ensure_column(db, "profiles", col, coltype)
+
+    defaults = {
+        "brand_name": os.environ.get("BUSINESS_NAME", "Saif Matrimonial Services"),
+        "brand_tagline": os.environ.get("BUSINESS_TAGLINE", "Trusted Connections, Blessed Beginnings"),
+        "brand_phone": os.environ.get("BUSINESS_PHONE", "7762023966"),
+        "whatsapp_number": os.environ.get("WHATSAPP_NUMBER", os.environ.get("BUSINESS_PHONE", "7762023966")),
+        "brand_email": os.environ.get("BUSINESS_EMAIL", ""),
+        "brand_location": os.environ.get("BUSINESS_LOCATION", "Kolkata, India"),
+        "unlock_price": os.environ.get("UNLOCK_PRICE", "11"),
+        "upi_id": os.environ.get("UPI_ID", "yourupi@bank"),
+        "primary_color": os.environ.get("PRIMARY_COLOR", "#0b5a44"),
+        "secondary_color": os.environ.get("SECONDARY_COLOR", "#073e2f"),
+        "accent_color": os.environ.get("ACCENT_COLOR", "#c9a86a"),
+        "hero_heading": "Find Your Life Partner With Trust, Haya &amp; Purpose",
+        "hero_subheading": "A serious, privacy-first matrimonial service for meaningful Nikah connections.",
+        "footer_text": "",
+        "logo_image": "",
+        "favicon_image": "",
+    }
+    for k, v in defaults.items():
+        db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+
+    db.commit()
+    db.close()
+
+
+def next_profile_code(db):
+    row = db.execute("SELECT next_val FROM profile_counter WHERE id = 1").fetchone()
+    next_val = row["next_val"]
+    db.execute("UPDATE profile_counter SET next_val = ? WHERE id = 1", (next_val + 1,))
+    return f"SMS{next_val}"
+
+
+def new_request_code():
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+# ======================================================================
+# SETTINGS (branding) — DB-backed, admin-editable. Env vars are only the
+# first-run defaults (seeded once in init_db). No template hard-codes
+# brand name / colors / contact info any more.
+# ======================================================================
+def load_settings():
+    db = get_db()
+    rows = db.execute("SELECT key, value FROM settings").fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
+@app.before_request
+def load_settings_into_g():
+    g.settings = load_settings()
+
+
+def get_setting(key, default=""):
+    return (getattr(g, "settings", {}) or {}).get(key) or default
+
+
+@app.context_processor
+def inject_globals():
+    s = getattr(g, "settings", {}) or {}
+    return dict(
+        business_name=s.get("brand_name", "Matrimonial Services"),
+        business_tagline=s.get("brand_tagline", ""),
+        business_phone=s.get("brand_phone", ""),
+        whatsapp_number=s.get("whatsapp_number", s.get("brand_phone", "")),
+        business_email=s.get("brand_email", ""),
+        business_location=s.get("brand_location", ""),
+        unlock_price=s.get("unlock_price", "11"),
+        upi_id=s.get("upi_id", "yourupi@bank"),
+        primary_color=s.get("primary_color", "#0b5a44"),
+        secondary_color=s.get("secondary_color", "#073e2f"),
+        accent_color=s.get("accent_color", "#c9a86a"),
+        hero_heading=s.get("hero_heading", ""),
+        hero_subheading=s.get("hero_subheading", ""),
+        footer_text=s.get("footer_text", ""),
+        logo_image=s.get("logo_image", ""),
+        current_year=datetime.now().year,
+    )
+
+
+# ======================================================================
+# CSRF PROTECTION (lightweight, no external dependency)
+# ======================================================================
+def get_csrf_token():
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(24)
+    return session["_csrf_token"]
+
+
+app.jinja_env.globals["csrf_token"] = get_csrf_token
+
+
+@app.before_request
+def enforce_csrf():
+    if request.method == "POST":
+        token = session.get("_csrf_token")
+        submitted = request.form.get("csrf_token")
+        if not token or not submitted or not secrets.compare_digest(token, submitted):
+            abort(400)
+
+
+# ======================================================================
+# SECURITY HEADERS
+# ======================================================================
+@app.after_request
+def set_security_headers(resp):
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "same-origin"
+    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self'"
+    )
+    path = request.path or ""
+    if (path.startswith(("/admin", "/my-requests", "/verify-access"))
+            or "/photo" in path or path.endswith("/full") or path.endswith("/unlock")):
+        resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
+# ======================================================================
+# RATE LIMITING (simple in-memory; fine for a single small worker)
+# ======================================================================
+def _client_ip():
+    return request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+
+
+class RateLimiter:
+    """Generic sliding-window counter with an optional lockout, keyed by
+    any string (IP, phone, etc). Used for admin login and OTP requests."""
+
+    def __init__(self, max_attempts, window_seconds, lockout_seconds):
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self.lockout_seconds = lockout_seconds
+        self._store = {}
+
+    def is_locked(self, key):
+        entry = self._store.get(key)
+        if not entry:
+            return False
+        count, first_seen, locked_until = entry
+        return bool(locked_until and time.time() < locked_until)
+
+    def register_attempt(self, key):
+        count, first_seen, locked_until = self._store.get(key, (0, time.time(), None))
+        now = time.time()
+        if now - first_seen > self.window_seconds:
+            count, first_seen = 0, now
+        count += 1
+        locked_until = now + self.lockout_seconds if count >= self.max_attempts else None
+        self._store[key] = (count, first_seen, locked_until)
+
+    def clear(self, key):
+        self._store.pop(key, None)
+
+
+login_limiter = RateLimiter(max_attempts=6, window_seconds=600, lockout_seconds=900)
+otp_request_limiter = RateLimiter(max_attempts=5, window_seconds=600, lockout_seconds=600)
+otp_verify_limiter = RateLimiter(max_attempts=6, window_seconds=600, lockout_seconds=600)
+
+
+# ======================================================================
+# IMAGE HANDLING
+# ======================================================================
+class ImageValidationError(Exception):
+    pass
+
+
+def _load_validated_image(file_storage):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    ext = file_storage.filename.rsplit(".", 1)[-1].lower() if "." in file_storage.filename else ""
+    if ext not in ALLOWED_IMAGE_EXT:
+        raise ImageValidationError("Unsupported file type. Use JPG, PNG or WEBP.")
+
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size > MAX_IMAGE_BYTES:
+        raise ImageValidationError("Image is too large (max 6 MB).")
+    if size == 0:
+        raise ImageValidationError("Empty file.")
+
+    try:
+        img = Image.open(file_storage.stream)
+        img.verify()
+    except Exception:
+        raise ImageValidationError("This doesn't look like a valid image file.")
+
+    file_storage.stream.seek(0)
+    img = Image.open(file_storage.stream)
+    img = ImageOps.exif_transpose(img)
+    img = img.convert("RGB")
+    return img
+
+
+def save_profile_photo(file_storage):
+    img = _load_validated_image(file_storage)
+    if img is None:
+        return None, None
+
+    original_name = secrets.token_hex(16) + ".jpg"
+    img.save(os.path.join(PRIVATE_ORIGINALS_DIR, original_name), "JPEG", quality=88)
+
+    preview = img.copy()
+    preview.thumbnail((320, 320))
+    preview = preview.filter(ImageFilter.GaussianBlur(radius=14))
+    preview_name = secrets.token_hex(16) + ".jpg"
+    preview.save(os.path.join(PREVIEW_DIR, preview_name), "JPEG", quality=55)
+
+    return original_name, preview_name
+
+
+def save_payment_proof(file_storage):
+    img = _load_validated_image(file_storage)
+    if img is None:
+        return None
+    proof_name = secrets.token_hex(16) + ".jpg"
+    img.save(os.path.join(PRIVATE_PROOFS_DIR, proof_name), "JPEG", quality=85)
+    return proof_name
+
+
+def save_generic_image(file_storage, dest_dir, max_dim=1600):
+    img = _load_validated_image(file_storage)
+    if img is None:
+        return None
+    img.thumbnail((max_dim, max_dim))
+    name = secrets.token_hex(12) + ".jpg"
+    img.save(os.path.join(dest_dir, name), "JPEG", quality=90)
+    return name
+
+
+def delete_file_quietly(directory, filename):
+    if not filename:
+        return
+    try:
+        os.remove(os.path.join(directory, filename))
+    except OSError:
+        pass
+
+
+def _watermark_font(size):
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ):
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
+
+def get_watermarked_photo(profile, viewer_phone):
+    """Serve a per-viewer watermarked copy of the protected original,
+    cached to disk. Tasteful, low-opacity, tiled — hard to crop out
+    without damaging the photo, and it encodes the profile code plus a
+    hash of the viewer's phone so a leaked copy is traceable."""
+    original_name = profile["photo_original_name"]
+    if not original_name:
+        return None
+
+    viewer_tag = hashlib.sha256((viewer_phone or "guest").encode()).hexdigest()[:8]
+    cache_key = hashlib.sha256(f"{original_name}:{viewer_tag}".encode()).hexdigest() + ".jpg"
+    cache_path = os.path.join(PRIVATE_WATERMARK_CACHE_DIR, cache_key)
+    if os.path.exists(cache_path):
+        return cache_path
+
+    original_path = os.path.join(PRIVATE_ORIGINALS_DIR, original_name)
+    if not os.path.exists(original_path):
+        return None
+
+    base = Image.open(original_path).convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    label = f"{get_setting('brand_name', 'Matrimonial')} | {profile['profile_code']} | {viewer_tag}"
+    font_size = max(14, base.width // 28)
+    font = _watermark_font(font_size)
+    try:
+        text_w = draw.textlength(label, font=font)
+    except Exception:
+        text_w = font_size * len(label) * 0.5
+    step_x = int(text_w) + 60
+    step_y = font_size * 5
+    row = 0
+    for oy in range(-step_y, base.height + step_y, step_y):
+        shift = (step_x // 2) if row % 2 else 0
+        for ox in range(-step_x, base.width + step_x, step_x):
+            draw.text((ox + shift, oy), label, font=font, fill=(255, 255, 255, 60))
+        row += 1
+    watermarked = Image.alpha_composite(base, overlay).convert("RGB")
+    watermarked.save(cache_path, "JPEG", quality=87)
+    return cache_path
+
+
+# ======================================================================
+# ACCESS CONTROL HELPERS
+# ======================================================================
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("is_admin"):
+            return redirect(url_for("admin_login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def log_admin_action(action, detail=""):
+    db = get_db()
+    db.execute(
+        "INSERT INTO admin_activity_log (admin_username, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)",
+        (session.get("admin_username", ADMIN_USERNAME), action, detail, _client_ip(), datetime.now().isoformat()),
+    )
+    db.commit()
+
+
+def verified_phone():
+    return session.get("verified_phone")
+
+
+def user_has_unlocked(db, profile_id, phone):
+    if not phone:
+        return None
+    return db.execute(
+        "SELECT * FROM unlock_requests WHERE profile_id = ? AND user_phone = ? AND status = 'unlocked'",
+        (profile_id, phone),
+    ).fetchone()
+
+
+PHONE_RE = re.compile(r"^[6-9]\d{9}$")
+
+
+def valid_indian_phone(phone):
+    return bool(PHONE_RE.match((phone or "").strip()))
+
+
+# ======================================================================
+# BANNERS
+# ======================================================================
+def active_banners(slot):
+    db = get_db()
+    today = date.today().isoformat()
+    return db.execute(
+        """
+        SELECT * FROM banners
+        WHERE slot = ? AND is_active = 1
+          AND (start_date IS NULL OR start_date = '' OR start_date <= ?)
+          AND (end_date IS NULL OR end_date = '' OR end_date >= ?)
+        ORDER BY sort_order ASC, id DESC
+        """,
+        (slot, today, today),
+    ).fetchall()
+
+
+# ======================================================================
+# PUBLIC ROUTES
+# ======================================================================
+PAGE_SIZE = 12
+
+
+@app.route("/")
+def index():
+    db = get_db()
+
+    filters = {
+        "gender": request.args.get("gender", "").strip(),
+        "min_age": request.args.get("min_age", "").strip(),
+        "max_age": request.args.get("max_age", "").strip(),
+        "city": request.args.get("city", "").strip(),
+        "marital_status": request.args.get("marital_status", "").strip(),
+        "education": request.args.get("education", "").strip(),
+        "profession": request.args.get("profession", "").strip(),
+        "community": request.args.get("community", "").strip(),
+    }
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+
+    where = ["is_active = 1"]
+    params = []
+    if filters["gender"] in ("Male", "Female"):
+        where.append("gender = ?")
+        params.append(filters["gender"])
+    if filters["min_age"].isdigit():
+        where.append("age >= ?")
+        params.append(int(filters["min_age"]))
+    if filters["max_age"].isdigit():
+        where.append("age <= ?")
+        params.append(int(filters["max_age"]))
+    if filters["city"]:
+        where.append("city LIKE ?")
+        params.append(f"%{filters['city']}%")
+    if filters["marital_status"]:
+        where.append("marital_status = ?")
+        params.append(filters["marital_status"])
+    if filters["education"]:
+        where.append("education LIKE ?")
+        params.append(f"%{filters['education']}%")
+    if filters["profession"]:
+        where.append("profession LIKE ?")
+        params.append(f"%{filters['profession']}%")
+    if filters["community"]:
+        where.append("community = ?")
+        params.append(filters["community"])
+
+    where_sql = " AND ".join(where)
+    total = db.execute(f"SELECT COUNT(*) c FROM profiles WHERE {where_sql}", params).fetchone()["c"]
+    total_pages = max(1, math.ceil(total / PAGE_SIZE))
+    page = min(page, total_pages)
+    offset = (page - 1) * PAGE_SIZE
+
+    profiles = db.execute(
+        f"SELECT * FROM profiles WHERE {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        params + [PAGE_SIZE, offset],
+    ).fetchall()
+
+    def distinct(col):
+        return [r[0] for r in db.execute(
+            f"SELECT DISTINCT {col} FROM profiles WHERE is_active=1 AND {col} IS NOT NULL AND {col} != '' ORDER BY {col}"
+        ).fetchall()]
+
+    filter_options = {
+        "cities": distinct("city"),
+        "marital_statuses": distinct("marital_status"),
+        "communities": distinct("community"),
+    }
+
+    any_filter_active = any(filters.values())
+    active_filters = {k: v for k, v in filters.items() if v}
+
+    return render_template(
+        "index.html", profiles=profiles, filters=filters, filter_options=filter_options,
+        active_filters=active_filters,
+        page=page, total_pages=total_pages, total=total, any_filter_active=any_filter_active,
+        hero_banners=active_banners("hero"), mid_banners=active_banners("mid"),
+        footer_banners=active_banners("footer"),
+    )
+
+
+@app.route("/how-it-works")
+def how_it_works():
+    return render_template("how_it_works.html")
+
+
+@app.route("/faq")
+def faq():
+    return render_template("faq.html")
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/profile/<profile_code>")
+def profile_preview(profile_code):
+    db = get_db()
+    profile = db.execute(
+        "SELECT * FROM profiles WHERE profile_code = ? AND is_active = 1", (profile_code,)
+    ).fetchone()
+    if not profile:
+        abort(404)
+    already_unlocked = user_has_unlocked(db, profile["id"], verified_phone())
+    return render_template("profile_preview.html", profile=profile, already_unlocked=already_unlocked)
+
+
+@app.route("/profile/<profile_code>/preview-image")
+def profile_preview_image(profile_code):
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
+    if not profile or not profile["photo_preview_name"]:
+        abort(404)
+    resp = send_from_directory(PREVIEW_DIR, profile["photo_preview_name"])
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
+@app.route("/profile/<profile_code>/photo")
+def profile_original_photo(profile_code):
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
+    if not profile:
+        abort(404)
+
+    phone = verified_phone()
+    unlocked = user_has_unlocked(db, profile["id"], phone)
+    if not unlocked:
+        abort(403)
+
+    path = get_watermarked_photo(profile, phone)
+    if not path:
+        abort(404)
+    resp = send_file(path, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "no-store, private"
+    resp.headers["X-Robots-Tag"] = "noindex"
+    return resp
+
+
+@app.route("/profile/<profile_code>/unlock", methods=["GET", "POST"])
+def unlock(profile_code):
+    db = get_db()
+    profile = db.execute(
+        "SELECT * FROM profiles WHERE profile_code = ? AND is_active = 1", (profile_code,)
+    ).fetchone()
+    if not profile:
+        abort(404)
+
+    if request.method == "POST":
+        user_name = request.form.get("user_name", "").strip()[:120]
+        user_phone = request.form.get("user_phone", "").strip()
+        message = request.form.get("message", "").strip()[:500]
+        consent = request.form.get("consent")
+
+        errors = []
+        if not valid_indian_phone(user_phone):
+            errors.append("Please enter a valid 10-digit Indian mobile number.")
+        if not consent:
+            errors.append("Please confirm you have completed the payment.")
+
+        proof_file = request.files.get("payment_proof")
+        proof_name = None
+        if not proof_file or not proof_file.filename:
+            errors.append("Please upload your payment screenshot.")
+        else:
+            try:
+                proof_name = save_payment_proof(proof_file)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        if not errors:
+            existing = db.execute(
+                "SELECT * FROM unlock_requests WHERE profile_id = ? AND user_phone = ? AND status = 'pending'",
+                (profile["id"], user_phone),
+            ).fetchone()
+            if existing:
+                errors.append("You already have a pending request for this profile with this number.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("unlock.html", profile=profile)
+
+        request_code = new_request_code()
+        db.execute(
+            """
+            INSERT INTO unlock_requests
+            (request_code, profile_id, user_name, user_phone, payment_proof_name, message, status, requested_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (request_code, profile["id"], user_name, user_phone, proof_name, message, datetime.now().isoformat()),
+        )
+        db.commit()
+
+        # NOTE: unlike v2, we deliberately do NOT auto-trust this session
+        # with `verified_phone` here. A phone number typed into a form is
+        # not proof of ownership. Real access to "My Requests" now
+        # requires OTP verification of that number.
+        return render_template("request_submitted.html", profile=profile, request_code=request_code)
+
+    return render_template("unlock.html", profile=profile)
+
+
+@app.route("/profile/<profile_code>/full")
+def profile_full(profile_code):
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
+    if not profile:
+        abort(404)
+    unlocked = user_has_unlocked(db, profile["id"], verified_phone())
+    if not unlocked:
+        flash("This profile isn't unlocked for your verified number yet.", "error")
+        return redirect(url_for("verify_access"))
+    return render_template("profile_full.html", profile=profile)
+
+
+# ======================================================================
+# OTP-BASED ACCESS ("My Requests" / lightweight passwordless account)
+#
+# There is no separate "sign up" in this business — browsing is free and
+# anonymous. The phone number a visitor uses when submitting an unlock
+# request effectively *is* their account. To check "My Requests" from
+# any device, they verify ownership of that number via a one-time SMS
+# code. This replaces v2's phone+request-code check, which trusted
+# whatever phone number was simply typed into a form.
+# ======================================================================
+OTP_LENGTH = 6
+OTP_TTL_MINUTES = 5
+OTP_RESEND_COOLDOWN_SECONDS = 45
+
+
+@app.route("/verify-access", methods=["GET", "POST"])
+def verify_access():
+    if request.method == "POST":
+        phone = request.form.get("phone", "").strip()
+        if not valid_indian_phone(phone):
+            flash("Please enter a valid 10-digit Indian mobile number.", "error")
+            return render_template("verify_access.html")
+
+        if otp_request_limiter.is_locked(phone):
+            flash("Too many OTP requests for this number. Please try again later.", "error")
+            return render_template("verify_access.html")
+
+        last_sent = session.get("otp_last_sent_at")
+        if last_sent and time.time() - last_sent < OTP_RESEND_COOLDOWN_SECONDS and session.get("otp_phone") == phone:
+            session["otp_phone"] = phone
+            return redirect(url_for("verify_access_confirm"))
+
+        otp_request_limiter.register_attempt(phone)
+        code = "".join(secrets.choice("0123456789") for _ in range(OTP_LENGTH))
+        db = get_db()
+        db.execute("DELETE FROM otp_codes WHERE phone = ?", (phone,))
+        db.execute(
+            "INSERT INTO otp_codes (phone, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
+            (phone, generate_password_hash(code),
+             (datetime.now() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat(),
+             datetime.now().isoformat()),
+        )
+        db.commit()
+        send_otp_sms(phone, code)
+
+        session["otp_phone"] = phone
+        session["otp_last_sent_at"] = time.time()
+        if OTP_PROVIDER == "console":
+            flash(f"Dev mode: SMS provider not configured, so here's your OTP directly: {code}", "success")
+        else:
+            flash("An OTP has been sent to your mobile number.", "success")
+        return redirect(url_for("verify_access_confirm"))
+
+    return render_template("verify_access.html")
+
+
+@app.route("/verify-access/confirm", methods=["GET", "POST"])
+def verify_access_confirm():
+    phone = session.get("otp_phone")
+    if not phone:
+        return redirect(url_for("verify_access"))
+
+    if request.method == "POST":
+        entered = request.form.get("otp", "").strip()
+        if otp_verify_limiter.is_locked(phone):
+            flash("Too many incorrect attempts. Please request a new OTP.", "error")
+            return redirect(url_for("verify_access"))
+
+        db = get_db()
+        row = db.execute(
+            "SELECT * FROM otp_codes WHERE phone = ? AND consumed = 0 ORDER BY id DESC LIMIT 1", (phone,)
+        ).fetchone()
+
+        valid = False
+        if row and datetime.fromisoformat(row["expires_at"]) >= datetime.now():
+            if check_password_hash(row["code_hash"], entered):
+                valid = True
+
+        if not valid:
+            otp_verify_limiter.register_attempt(phone)
+            flash("Incorrect or expired OTP. Please try again.", "error")
+            return render_template("verify_access_confirm.html", phone=phone)
+
+        db.execute("UPDATE otp_codes SET consumed = 1 WHERE id = ?", (row["id"],))
+        db.commit()
+        otp_verify_limiter.clear(phone)
+        session.pop("otp_phone", None)
+        session.pop("otp_last_sent_at", None)
+        session.permanent = True
+        session["verified_phone"] = phone
+        flash("Verified successfully.", "success")
+        return redirect(url_for("my_requests"))
+
+    return render_template("verify_access_confirm.html", phone=phone)
+
+
+@app.route("/my-requests")
+def my_requests():
+    phone = verified_phone()
+    if not phone:
+        return redirect(url_for("verify_access"))
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT ur.*, p.profile_code, p.name, p.age, p.city
+        FROM unlock_requests ur JOIN profiles p ON p.id = ur.profile_id
+        WHERE ur.user_phone = ?
+        ORDER BY ur.requested_at DESC
+        """,
+        (phone,),
+    ).fetchall()
+    return render_template("my_requests.html", rows=rows, phone=phone)
+
+
+@app.route("/my-requests/exit")
+def exit_verification():
+    session.pop("verified_phone", None)
+    return redirect(url_for("index"))
+
+
+# ======================================================================
+# SEO — robots.txt / sitemap.xml
+# ======================================================================
+@app.route("/robots.txt")
+def robots_txt():
+    lines = [
+        "User-agent: *",
+        "Disallow: /admin",
+        "Disallow: /my-requests",
+        "Disallow: /verify-access",
+        "Disallow: /profile/*/unlock",
+        "Disallow: /profile/*/full",
+        "Disallow: /profile/*/photo",
+        f"Sitemap: {request.url_root.rstrip('/')}/sitemap.xml",
+    ]
+    return Response("\n".join(lines), mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    db = get_db()
+    profiles = db.execute("SELECT profile_code FROM profiles WHERE is_active = 1").fetchall()
+    urls = [url_for("index", _external=True), url_for("how_it_works", _external=True),
+            url_for("faq", _external=True), url_for("terms", _external=True),
+            url_for("privacy", _external=True)]
+    urls += [url_for("profile_preview", profile_code=p["profile_code"], _external=True) for p in profiles]
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for u in urls:
+        xml.append(f"<url><loc>{u}</loc></url>")
+    xml.append("</urlset>")
+    return Response("\n".join(xml), mimetype="application/xml")
+
+
+# ======================================================================
+# ADMIN — AUTH
+# ======================================================================
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    ip = _client_ip()
+    if request.method == "POST":
+        if login_limiter.is_locked(ip):
+            flash("Too many failed attempts. Please try again in a few minutes.", "error")
+            return render_template("admin_login.html")
+
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if username == ADMIN_USERNAME and check_password_hash(ADMIN_PASSWORD_HASH, password):
+            login_limiter.clear(ip)
+            session.clear()
+            session["is_admin"] = True
+            session["admin_username"] = username
+            session["admin_login_at"] = datetime.now().isoformat()
+            session.permanent = True
+            log_admin_action("login", f"from {ip}")
+            nxt = request.args.get("next")
+            return redirect(nxt or url_for("admin_dashboard"))
+
+        login_limiter.register_attempt(ip)
+        flash("Invalid credentials.", "error")
+    return render_template("admin_login.html")
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    if session.get("is_admin"):
+        log_admin_action("logout")
+    session.pop("is_admin", None)
+    session.pop("admin_username", None)
+    return redirect(url_for("admin_login"))
+
+
+# ======================================================================
+# ADMIN — DASHBOARD
+# ======================================================================
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+    db = get_db()
+    stats = {
+        "total": db.execute("SELECT COUNT(*) c FROM profiles").fetchone()["c"],
+        "active": db.execute("SELECT COUNT(*) c FROM profiles WHERE is_active=1").fetchone()["c"],
+        "hidden": db.execute("SELECT COUNT(*) c FROM profiles WHERE is_active=0").fetchone()["c"],
+        "pending": db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='pending'").fetchone()["c"],
+        "unlocked": db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='unlocked'").fetchone()["c"],
+        "rejected": db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='rejected'").fetchone()["c"],
+    }
+    recent_pending = db.execute(
+        """
+        SELECT ur.*, p.profile_code, p.name FROM unlock_requests ur
+        JOIN profiles p ON p.id = ur.profile_id
+        WHERE ur.status = 'pending' ORDER BY ur.requested_at DESC LIMIT 5
+        """
+    ).fetchall()
+    recent_activity = db.execute("SELECT * FROM admin_activity_log ORDER BY id DESC LIMIT 10").fetchall()
+    return render_template("admin_dashboard.html", stats=stats, recent_pending=recent_pending,
+                            recent_activity=recent_activity)
+
+
+# ======================================================================
+# ADMIN — PROFILES
+# ======================================================================
+@app.route("/admin/profiles")
+@admin_required
+def admin_profiles():
+    db = get_db()
+    q = request.args.get("q", "").strip()
+    if q:
+        profiles = db.execute(
+            "SELECT * FROM profiles WHERE profile_code LIKE ? OR name LIKE ? ORDER BY created_at DESC",
+            (f"%{q}%", f"%{q}%"),
+        ).fetchall()
+    else:
+        profiles = db.execute("SELECT * FROM profiles ORDER BY created_at DESC").fetchall()
+    return render_template("admin_profiles.html", profiles=profiles, q=q)
+
+
+def _profile_form_fields():
+    age_raw = request.form.get("age", "").strip()
+    return {
+        "name": request.form.get("name", "").strip()[:120],
+        "age": age_raw,
+        "gender": request.form.get("gender", "").strip(),
+        "city": request.form.get("city", "").strip()[:120],
+        "state": request.form.get("state", "").strip()[:120],
+        "marital_status": request.form.get("marital_status", "").strip()[:60],
+        "education": request.form.get("education", "").strip()[:150],
+        "profession": request.form.get("profession", "").strip()[:150],
+        "community": request.form.get("community", "").strip()[:150],
+        "sect": request.form.get("sect", "").strip()[:150],
+        "mother_tongue": request.form.get("mother_tongue", "").strip()[:60],
+        "height": request.form.get("height", "").strip()[:30],
+        "income": request.form.get("income", "").strip()[:60],
+        "work_location": request.form.get("work_location", "").strip()[:150],
+        "family_details": request.form.get("family_details", "").strip()[:1000],
+        "bio": request.form.get("bio", "").strip()[:1500],
+        "contact_number": request.form.get("contact_number", "").strip()[:20],
+        "contact_visible": 1 if request.form.get("contact_visible") else 0,
+        "admin_verified": 1 if request.form.get("admin_verified") else 0,
+        "phone_verified": 1 if request.form.get("phone_verified") else 0,
+        "photo_reviewed": 1 if request.form.get("photo_reviewed") else 0,
+    }
+
+
+@app.route("/admin/profiles/add", methods=["GET", "POST"])
+@admin_required
+def admin_add_profile():
+    db = get_db()
+    if request.method == "POST":
+        f = _profile_form_fields()
+        errors = []
+        if not (f["name"] and f["age"] and f["gender"] and f["city"]):
+            errors.append("Name, age, gender and city are required.")
+        try:
+            age = int(f["age"])
+            if age < 18 or age > 90:
+                errors.append("Age must be between 18 and 90.")
+        except ValueError:
+            errors.append("Age must be a number.")
+            age = None
+
+        original_name = preview_name = None
+        photo = request.files.get("photo")
+        if photo and photo.filename:
+            try:
+                original_name, preview_name = save_profile_photo(photo)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("admin_add_profile.html", form=f)
+
+        profile_code = next_profile_code(db)
+        db.execute(
+            """
+            INSERT INTO profiles
+            (profile_code, name, age, gender, city, state, marital_status, education, profession,
+             community, sect, mother_tongue, height, income, work_location, family_details, bio,
+             contact_number, contact_visible, admin_verified, phone_verified, photo_reviewed,
+             photo_original_name, photo_preview_name, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """,
+            (
+                profile_code, f["name"], age, f["gender"], f["city"], f["state"], f["marital_status"],
+                f["education"], f["profession"], f["community"], f["sect"], f["mother_tongue"], f["height"],
+                f["income"], f["work_location"], f["family_details"], f["bio"], f["contact_number"],
+                f["contact_visible"], f["admin_verified"], f["phone_verified"], f["photo_reviewed"],
+                original_name, preview_name, datetime.now().isoformat(),
+            ),
+        )
+        db.commit()
+        log_admin_action("add_profile", profile_code)
+        flash(f"Profile {profile_code} added.", "success")
+        return redirect(url_for("admin_profiles"))
+
+    return render_template("admin_add_profile.html", form=None)
+
+
+@app.route("/admin/profiles/<int:profile_id>/edit", methods=["GET", "POST"])
+@admin_required
+def admin_edit_profile(profile_id):
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+    if not profile:
+        abort(404)
+
+    if request.method == "POST":
+        f = _profile_form_fields()
+        errors = []
+        if not (f["name"] and f["age"] and f["gender"] and f["city"]):
+            errors.append("Name, age, gender and city are required.")
+        try:
+            age = int(f["age"])
+            if age < 18 or age > 90:
+                errors.append("Age must be between 18 and 90.")
+        except ValueError:
+            errors.append("Age must be a number.")
+            age = None
+
+        new_original, new_preview = None, None
+        photo = request.files.get("photo")
+        if photo and photo.filename:
+            try:
+                new_original, new_preview = save_profile_photo(photo)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("admin_edit_profile.html", profile=profile, form=f)
+
+        if new_original:
+            delete_file_quietly(PRIVATE_ORIGINALS_DIR, profile["photo_original_name"])
+            delete_file_quietly(PREVIEW_DIR, profile["photo_preview_name"])
+            db.execute(
+                "UPDATE profiles SET photo_original_name=?, photo_preview_name=? WHERE id=?",
+                (new_original, new_preview, profile_id),
+            )
+
+        db.execute(
+            """
+            UPDATE profiles SET name=?, age=?, gender=?, city=?, state=?, marital_status=?, education=?,
+            profession=?, community=?, sect=?, mother_tongue=?, height=?, income=?, work_location=?,
+            family_details=?, bio=?, contact_number=?, contact_visible=?, admin_verified=?,
+            phone_verified=?, photo_reviewed=? WHERE id=?
+            """,
+            (
+                f["name"], age, f["gender"], f["city"], f["state"], f["marital_status"], f["education"],
+                f["profession"], f["community"], f["sect"], f["mother_tongue"], f["height"], f["income"],
+                f["work_location"], f["family_details"], f["bio"], f["contact_number"], f["contact_visible"],
+                f["admin_verified"], f["phone_verified"], f["photo_reviewed"], profile_id,
+            ),
+        )
+        db.commit()
+        log_admin_action("edit_profile", profile["profile_code"])
+        flash("Profile updated.", "success")
+        return redirect(url_for("admin_profiles"))
+
+    return render_template("admin_edit_profile.html", profile=profile, form=None)
+
+
+@app.route("/admin/profiles/<int:profile_id>/toggle", methods=["POST"])
+@admin_required
+def admin_toggle_profile(profile_id):
+    db = get_db()
+    db.execute("UPDATE profiles SET is_active = 1 - is_active WHERE id = ?", (profile_id,))
+    db.commit()
+    log_admin_action("toggle_profile", str(profile_id))
+    return redirect(url_for("admin_profiles"))
+
+
+@app.route("/admin/profiles/<int:profile_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_profile(profile_id):
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+    if profile:
+        delete_file_quietly(PRIVATE_ORIGINALS_DIR, profile["photo_original_name"])
+        delete_file_quietly(PREVIEW_DIR, profile["photo_preview_name"])
+        db.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+        db.commit()
+        log_admin_action("delete_profile", profile["profile_code"])
+        flash("Profile deleted.", "success")
+    return redirect(url_for("admin_profiles"))
+
+
+# ======================================================================
+# ADMIN — UNLOCK REQUESTS
+# ======================================================================
+@app.route("/admin/requests")
+@admin_required
+def admin_requests():
+    db = get_db()
+    status_filter = request.args.get("status", "pending")
+    query = """
+        SELECT ur.*, p.profile_code, p.name AS profile_name
+        FROM unlock_requests ur JOIN profiles p ON p.id = ur.profile_id
+    """
+    if status_filter != "all":
+        query += " WHERE ur.status = ? ORDER BY ur.requested_at DESC"
+        rows = db.execute(query, (status_filter,)).fetchall()
+    else:
+        query += " ORDER BY ur.requested_at DESC"
+        rows = db.execute(query).fetchall()
+    return render_template("admin_requests.html", rows=rows, status_filter=status_filter)
+
+
+@app.route("/admin/payment-proof/<int:request_id>")
+@admin_required
+def admin_payment_proof(request_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM unlock_requests WHERE id = ?", (request_id,)).fetchone()
+    if not row or not row["payment_proof_name"]:
+        abort(404)
+    resp = send_from_directory(PRIVATE_PROOFS_DIR, row["payment_proof_name"])
+    resp.headers["Cache-Control"] = "no-store, private"
+    return resp
+
+
+@app.route("/admin/requests/<int:request_id>/<action>", methods=["POST"])
+@admin_required
+def admin_decide_request(request_id, action):
+    if action not in ("unlock", "reject"):
+        abort(400)
+    db = get_db()
+    new_status = "unlocked" if action == "unlock" else "rejected"
+    db.execute(
+        "UPDATE unlock_requests SET status = ?, decided_at = ? WHERE id = ?",
+        (new_status, datetime.now().isoformat(), request_id),
+    )
+    db.commit()
+    log_admin_action(f"request_{action}", str(request_id))
+    flash(f"Request marked as {new_status}.", "success")
+    return redirect(url_for("admin_requests"))
+
+
+# ======================================================================
+# ADMIN — WEBSITE SETTINGS (branding)
+# ======================================================================
+SETTINGS_TEXT_FIELDS = [
+    "brand_name", "brand_tagline", "brand_phone", "whatsapp_number", "brand_email",
+    "brand_location", "unlock_price", "upi_id", "primary_color", "secondary_color",
+    "accent_color", "hero_heading", "hero_subheading", "footer_text",
+]
+
+
+@app.route("/admin/settings", methods=["GET", "POST"])
+@admin_required
+def admin_settings():
+    db = get_db()
+    if request.method == "POST":
+        for key in SETTINGS_TEXT_FIELDS:
+            value = request.form.get(key, "").strip()[:500]
+            db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+        logo = request.files.get("logo")
+        if logo and logo.filename:
+            try:
+                name = save_generic_image(logo, BRANDING_DIR, max_dim=600)
+                if name:
+                    db.execute("INSERT INTO settings (key, value) VALUES ('logo_image', ?) "
+                               "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (name,))
+            except ImageValidationError as e:
+                flash(f"Logo not saved: {e}", "error")
+
+        favicon = request.files.get("favicon")
+        if favicon and favicon.filename:
+            try:
+                name = save_generic_image(favicon, BRANDING_DIR, max_dim=256)
+                if name:
+                    db.execute("INSERT INTO settings (key, value) VALUES ('favicon_image', ?) "
+                               "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (name,))
+            except ImageValidationError as e:
+                flash(f"Favicon not saved: {e}", "error")
+
+        db.commit()
+        log_admin_action("update_settings")
+        flash("Website settings updated.", "success")
+        return redirect(url_for("admin_settings"))
+
+    return render_template("admin_settings.html", settings=load_settings())
+
+
+# ======================================================================
+# ADMIN — BANNERS
+# ======================================================================
+@app.route("/admin/banners")
+@admin_required
+def admin_banners():
+    db = get_db()
+    banners = db.execute("SELECT * FROM banners ORDER BY slot, sort_order, id DESC").fetchall()
+    return render_template("admin_banners.html", banners=banners)
+
+
+@app.route("/admin/banners/add", methods=["GET", "POST"])
+@admin_required
+def admin_add_banner():
+    if request.method == "POST":
+        slot = request.form.get("slot", "hero")
+        title = request.form.get("title", "").strip()[:150]
+        link_url = request.form.get("link_url", "").strip()[:500]
+        start_date = request.form.get("start_date", "").strip()
+        end_date = request.form.get("end_date", "").strip()
+        try:
+            sort_order = int(request.form.get("sort_order", "0"))
+        except ValueError:
+            sort_order = 0
+
+        image = request.files.get("image")
+        if not image or not image.filename:
+            flash("Please choose a banner image.", "error")
+            return render_template("admin_banner_form.html", banner=None)
+        try:
+            image_name = save_generic_image(image, BANNERS_DIR, max_dim=1600)
+        except ImageValidationError as e:
+            flash(str(e), "error")
+            return render_template("admin_banner_form.html", banner=None)
+
+        db = get_db()
+        db.execute(
+            """INSERT INTO banners (slot, title, link_url, image_name, is_active, start_date, end_date,
+               sort_order, created_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)""",
+            (slot, title, link_url, image_name, start_date or None, end_date or None,
+             sort_order, datetime.now().isoformat()),
+        )
+        db.commit()
+        log_admin_action("add_banner", slot)
+        flash("Banner added.", "success")
+        return redirect(url_for("admin_banners"))
+
+    return render_template("admin_banner_form.html", banner=None)
+
+
+@app.route("/admin/banners/<int:banner_id>/toggle", methods=["POST"])
+@admin_required
+def admin_toggle_banner(banner_id):
+    db = get_db()
+    db.execute("UPDATE banners SET is_active = 1 - is_active WHERE id = ?", (banner_id,))
+    db.commit()
+    log_admin_action("toggle_banner", str(banner_id))
+    return redirect(url_for("admin_banners"))
+
+
+@app.route("/admin/banners/<int:banner_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_banner(banner_id):
+    db = get_db()
+    banner = db.execute("SELECT * FROM banners WHERE id = ?", (banner_id,)).fetchone()
+    if banner:
+        delete_file_quietly(BANNERS_DIR, banner["image_name"])
+        db.execute("DELETE FROM banners WHERE id = ?", (banner_id,))
+        db.commit()
+        log_admin_action("delete_banner", str(banner_id))
+        flash("Banner deleted.", "success")
+    return redirect(url_for("admin_banners"))
+
+
+# ======================================================================
+# ERROR PAGES
+# ======================================================================
+@app.errorhandler(404)
+def err_404(e):
+    return render_template("error.html", code=404, title="Page Not Found",
+                            message="The page you're looking for doesn't exist or has moved."), 404
+
+
+@app.errorhandler(403)
+def err_403(e):
+    return render_template("error.html", code=403, title="Access Denied",
+                            message="You don't have permission to view this."), 403
+
+
+@app.errorhandler(413)
+def err_413(e):
+    return render_template("error.html", code=413, title="File Too Large",
+                            message="The file you tried to upload is too large."), 413
+
+
+@app.errorhandler(400)
+def err_400(e):
+    return render_template("error.html", code=400, title="Something Went Wrong",
+                            message="Your form session expired. Please go back and try again."), 400
+
+
+@app.errorhandler(500)
+def err_500(e):
+    return render_template("error.html", code=500, title="Something Went Wrong",
+                            message="An unexpected error occurred. Please try again shortly."), 500
+
+
+# ======================================================================
+init_db()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
