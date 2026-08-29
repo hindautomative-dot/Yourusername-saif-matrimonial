@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Manage Profiles{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">Manage Profiles</h1>
+
+    <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-bottom:20px;">
+        <a class="btn btn-primary" href="{{ url_for('admin_add_profile') }}">+ Add New Profile</a>
+        <form method="GET" style="display:flex; gap:8px;">
+            <input type="text" name="q" placeholder="Search by code or name" value="{{ q }}" style="margin:0;">
+            <button class="btn btn-outline btn-sm" type="submit">Search</button>
+        </form>
+    </div>
+
+    {% if profiles %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Code</th><th>Name</th><th>Age</th><th>City</th><th>Status</th><th>Badges</th><th>Actions</th></tr>
+            {% for p in profiles %}
+            <tr>
+                <td>{{ p.profile_code }}</td>
+                <td>{{ p.name }}</td>
+                <td>{{ p.age }}</td>
+                <td>{{ p.city }}</td>
+                <td>{{ "Active" if p.is_active else "Hidden" }}</td>
+                <td>
+                    {% if p.admin_verified %}<span class="badge badge-mini">Admin</span>{% endif %}
+                    {% if p.phone_verified %}<span class="badge badge-mini">Phone</span>{% endif %}
+                    {% if p.photo_reviewed %}<span class="badge badge-mini">Photo</span>{% endif %}
+                </td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_edit_profile', profile_id=p.id) }}">Edit</a>
+                    <form method="POST" action="{{ url_for('admin_toggle_profile', profile_id=p.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-outline" type="submit">{{ "Hide" if p.is_active else "Show" }}</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_delete_profile', profile_id=p.id) }}"
+                          onsubmit="return confirm('Delete this profile permanently? This cannot be undone.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">🗂️</div>
+        <p>No profiles found.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

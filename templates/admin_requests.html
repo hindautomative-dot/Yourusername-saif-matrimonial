@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Unlock Requests{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">Unlock Requests</h1>
+
+    <div class="tabs">
+        <a href="{{ url_for('admin_requests', status='pending') }}" class="{{ 'active' if status_filter=='pending' }}">Pending</a>
+        <a href="{{ url_for('admin_requests', status='unlocked') }}" class="{{ 'active' if status_filter=='unlocked' }}">Unlocked</a>
+        <a href="{{ url_for('admin_requests', status='rejected') }}" class="{{ 'active' if status_filter=='rejected' }}">Rejected</a>
+        <a href="{{ url_for('admin_requests', status='all') }}" class="{{ 'active' if status_filter=='all' }}">All</a>
+    </div>
+
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Profile</th><th>Requested By</th><th>Phone</th><th>When</th><th>Proof</th><th>Status</th><th>Actions</th></tr>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.profile_code }} — {{ r.profile_name }}</td>
+                <td>{{ r.user_name or '—' }}</td>
+                <td>{{ r.user_phone }}</td>
+                <td>{{ r.requested_at[:16].replace('T',' ') }}</td>
+                <td>
+                    {% if r.payment_proof_name %}
+                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_payment_proof', request_id=r.id) }}" target="_blank" rel="noopener">View Proof</a>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if r.status == 'pending' %}<span class="badge badge-pending">Pending</span>
+                    {% elif r.status == 'unlocked' %}<span class="badge badge-unlocked">Unlocked</span>
+                    {% else %}<span class="badge badge-rejected">Rejected</span>{% endif %}
+                </td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    {% if r.status == 'pending' %}
+                    <form method="POST" action="{{ url_for('admin_decide_request', request_id=r.id, action='unlock') }}"
+                          onsubmit="return confirm('Confirm payment and unlock this profile for this user?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-primary" type="submit">Confirm &amp; Unlock</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_decide_request', request_id=r.id, action='reject') }}"
+                          onsubmit="return confirm('Reject this request?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+                    </form>
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">✅</div>
+        <p>No requests here.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

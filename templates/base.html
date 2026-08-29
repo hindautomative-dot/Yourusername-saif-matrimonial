@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ business_name }} — {{ business_tagline }}{% endblock %}</title>
+<meta name="description" content="{% block description %}{{ business_name }}: {{ business_tagline }}. Browse matrimonial profiles and unlock the one you're interested in for just ₹{{ unlock_price }} — no expensive membership required.{% endblock %}">
+<meta name="robots" content="{% block robots %}index, follow{% endblock %}">
+<meta property="og:title" content="{{ business_name }}">
+<meta property="og:description" content="{{ business_tagline }}">
+<meta property="og:type" content="website">
+<link rel="canonical" href="{{ request.url_root.rstrip('/') }}{{ request.path }}">
+{% if logo_image %}
+<link rel="icon" href="{{ url_for('static', filename='branding/' + logo_image) }}">
+{% else %}
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22{{ primary_color|replace('#','%23') }}%22/><text x=%2250%22 y=%2266%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22%23e8d9b8%22 font-family=%22Georgia%22>{{ business_name[0]|upper }}</text></svg>">
+{% endif %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<style>
+    :root {
+        --emerald: {{ primary_color }};
+        --emerald-dark: {{ secondary_color }};
+        --gold: {{ accent_color }};
+    }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+    <div class="site-header-inner">
+        <a href="{{ url_for('index') }}" class="brand">
+            {% if logo_image %}
+                <img src="{{ url_for('static', filename='branding/' + logo_image) }}" alt="{{ business_name }}" class="brand-logo-img">
+            {% else %}
+                <div class="brand-mark">{{ business_name[0]|upper }}</div>
+            {% endif %}
+            <div class="brand-text">
+                <strong>{{ business_name }}</strong>
+                <span>{{ business_tagline }}</span>
+            </div>
+        </a>
+
+        <nav class="nav-desktop">
+            <a href="{{ url_for('index') }}">Home</a>
+            <a href="{{ url_for('index') }}#profiles">Browse Profiles</a>
+            <a href="{{ url_for('how_it_works') }}">How It Works</a>
+            <a href="{{ url_for('faq') }}">FAQ</a>
+            <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
+            <a href="{{ url_for('index') }}#contact">Contact</a>
+            {% if session.get('is_admin') %}
+                <a href="{{ url_for('admin_dashboard') }}" class="nav-cta">Admin</a>
+            {% endif %}
+        </nav>
+
+        <button class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
+    </div>
+
+    <nav class="nav-mobile" id="navMobile">
+        <a href="{{ url_for('index') }}">Home</a>
+        <a href="{{ url_for('index') }}#profiles">Browse Profiles</a>
+        <a href="{{ url_for('how_it_works') }}">How It Works</a>
+        <a href="{{ url_for('faq') }}">FAQ</a>
+        <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
+        <a href="{{ url_for('index') }}#contact">Contact</a>
+    </nav>
+</header>
+
+<main>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    {% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+    <div class="footer-inner">
+        <div class="footer-brand">
+            <strong>{{ business_name }}</strong>
+            <p class="muted" style="margin:8px 0 0; font-size:13px; color:rgba(232,217,184,.75);">{{ business_tagline }}</p>
+        </div>
+        <div class="footer-links" id="contact">
+            <a href="{{ url_for('index') }}">Home</a>
+            <a href="{{ url_for('index') }}#profiles">Browse Profiles</a>
+            <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
+            <a href="{{ url_for('how_it_works') }}">How It Works</a>
+            <a href="{{ url_for('faq') }}">FAQ</a>
+            <a href="{{ url_for('privacy') }}">Privacy</a>
+            <a href="{{ url_for('terms') }}">Terms</a>
+            <a href="{{ url_for('admin_login') }}">Admin</a>
+        </div>
+        <div>
+            <div style="font-size:13.5px;">📞 {{ business_phone }}</div>
+            {% if business_email %}<div style="font-size:13.5px; margin-top:4px;">✉️ {{ business_email }}</div>{% endif %}
+            <div style="font-size:13.5px; margin-top:4px;">📍 {{ business_location }}</div>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        © {{ current_year }} {{ business_name }}. All rights reserved.
+        {% if footer_text %}&nbsp;·&nbsp;{{ footer_text }}{% endif %}
+    </div>
+</footer>
+
+<a class="whatsapp-fab" href="https://wa.me/91{{ whatsapp_number }}" target="_blank" rel="noopener" aria-label="WhatsApp support">💬</a>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

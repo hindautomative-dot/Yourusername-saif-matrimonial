@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}FAQ — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <h1 class="section-title">Frequently Asked Questions</h1>
+
+    <div class="faq-list">
+        <details class="faq-item">
+            <summary>How much does profile unlocking cost?</summary>
+            <p>Just ₹{{ unlock_price }} per profile — a one-time fee to view that specific profile's full photo and contact details. There is no membership or subscription.</p>
+        </details>
+        <details class="faq-item">
+            <summary>How do I pay?</summary>
+            <p>Scan the UPI QR code shown on the unlock page, or pay to our UPI ID directly, then upload your payment screenshot along with your name and mobile number.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Where do I send payment proof?</summary>
+            <p>You can upload it directly on the unlock page, or send it to us on WhatsApp at {{ business_phone }} if that's easier for you.</p>
+        </details>
+        <details class="faq-item">
+            <summary>How long does verification take?</summary>
+            <p>Our team manually checks each payment, usually within a few hours. You'll be able to see the status under "My Requests" once you verify your number with an OTP.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Why are photos blurred?</summary>
+            <p>To protect everyone's privacy. Full-resolution photos are only released to visitors whose payment has been verified for that specific profile.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Can I view a profile after payment?</summary>
+            <p>Yes — once our team confirms your payment, the profile is marked "Unlocked" in "My Requests" and you can view the full photo and permitted contact details.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Is my phone number public?</summary>
+            <p>No. Your number is only used to match your request and to send you an OTP when you want to check "My Requests". It is never shown publicly.</p>
+        </details>
+        <details class="faq-item">
+            <summary>Can I request multiple profiles?</summary>
+            <p>Yes. Each profile is unlocked separately for ₹{{ unlock_price }}, and all your requests will show up together under "My Requests".</p>
+        </details>
+        <details class="faq-item">
+            <summary>What happens if my payment cannot be verified?</summary>
+            <p>Your request will be marked "Rejected" and you'll be able to see that status. Please contact us on WhatsApp if you believe this was a mistake.</p>
+        </details>
+        <details class="faq-item">
+            <summary>How do I contact support?</summary>
+            <p>Call or WhatsApp us at {{ business_phone }}{% if business_email %}, or email {{ business_email }}{% endif %}.</p>
+        </details>
+    </div>
+</section>
+
+{% endblock %}

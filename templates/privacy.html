@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Privacy — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <h1 class="section-title">Privacy</h1>
+    <div class="card" style="font-size:14.5px; line-height:1.8; color:var(--charcoal);">
+        <p>Profiles listed on {{ business_name }} are shared strictly for matrimonial purposes.
+        By browsing or unlocking a profile, you agree not to misuse, screenshot for
+        redistribution, or share any profile's photograph or contact information with
+        anyone outside of matrimonial consideration.</p>
+
+        <p>Photos are shown publicly only as protected, low-resolution blurred previews. The
+        original file is never placed at a public URL — it is stored privately and released only
+        through a server check that confirms your verified number has an approved unlock for that
+        exact profile. Every full photo you view is also lightly watermarked, which helps trace
+        misuse if it's ever redistributed.</p>
+
+        <p>Your mobile number is used to (1) match your unlock request and (2) send you a one-time
+        OTP when you want to check "My Requests" — it is never displayed publicly.</p>
+
+        <p>Payment screenshots you upload are stored privately and are only accessible to our
+        verification team — they are never made public.</p>
+
+        <p>Honest limitation: no website can prevent someone from screenshotting or photographing
+        content already displayed on their own unlocked screen. What we do prevent is casual
+        downloading, direct-linking, or scraping of full-quality originals by people who haven't
+        paid and been approved for that specific profile.</p>
+
+        <p>If you believe a profile should be removed or a detail corrected, please contact
+        us at {{ business_phone }}.</p>
+    </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}How It Works — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <h1 class="section-title">How It Works</h1>
+    <p class="section-sub">A simple, transparent process from browsing to connecting.</p>
+
+    <div style="display:flex; flex-direction:column; gap:16px;">
+        <div class="step-card">
+            <div class="step-num">01</div>
+            <b>Browse</b>
+            <span>Explore available matrimonial profiles. Photos are shown in a protected, blurred preview to protect everyone's privacy.</span>
+        </div>
+        <div class="step-card">
+            <div class="step-num">02</div>
+            <b>Choose</b>
+            <span>Select the profile you are genuinely interested in and review the non-sensitive details shown.</span>
+        </div>
+        <div class="step-card">
+            <div class="step-num">03</div>
+            <b>Pay ₹{{ unlock_price }}</b>
+            <span>Scan the UPI QR code, pay the small unlock fee, and upload your payment screenshot right on the site along with your name and phone number.</span>
+        </div>
+        <div class="step-card">
+            <div class="step-num">04</div>
+            <b>Get Connected</b>
+            <span>Our team manually verifies your payment, usually within a few hours. Once confirmed, the full profile — photo and contact number — becomes visible to you under "My Requests".</span>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:24px;">
+        <b>How do I check my request status later?</b>
+        <p class="muted" style="font-size:14px;">
+            There's no separate sign-up. Go to "My Requests", enter the mobile number you used, and
+            verify it with a one-time OTP — that's your account, no password to remember.
+        </p>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+        <b>Need help?</b>
+        <p class="muted" style="font-size:14px;">Call or WhatsApp us at {{ business_phone }} any time.</p>
+        <a class="btn btn-primary" href="{{ url_for('index') }}#profiles">Browse Profiles</a>
+    </div>
+</section>
+
+{% endblock %}

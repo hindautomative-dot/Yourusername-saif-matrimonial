@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">Admin Dashboard</h1>
+
+    <div class="stat-grid">
+        <div class="stat-card"><div class="num">{{ stats.total }}</div><div class="label">Total Profiles</div></div>
+        <div class="stat-card"><div class="num">{{ stats.active }}</div><div class="label">Active Profiles</div></div>
+        <div class="stat-card"><div class="num">{{ stats.hidden }}</div><div class="label">Hidden Profiles</div></div>
+        <div class="stat-card"><div class="num">{{ stats.pending }}</div><div class="label">Pending Requests</div></div>
+        <div class="stat-card"><div class="num">{{ stats.unlocked }}</div><div class="label">Unlocked</div></div>
+        <div class="stat-card"><div class="num">{{ stats.rejected }}</div><div class="label">Rejected</div></div>
+    </div>
+
+    <div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:34px;">
+        <a class="btn btn-primary" href="{{ url_for('admin_add_profile') }}">+ Add Profile</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_profiles') }}">Manage Profiles</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_requests') }}">Pending Requests</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_settings') }}">Website Settings</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_banners') }}">Banners</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_logout') }}">Logout</a>
+    </div>
+
+    <h2 class="section-title" style="font-size:20px;">Recent Pending Requests</h2>
+    {% if recent_pending %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Profile</th><th>Requested By</th><th>Phone</th><th>When</th><th></th></tr>
+            {% for r in recent_pending %}
+            <tr>
+                <td>{{ r.profile_code }} — {{ r.name }}</td>
+                <td>{{ r.user_name or '—' }}</td>
+                <td>{{ r.user_phone }}</td>
+                <td>{{ r.requested_at[:16].replace('T',' ') }}</td>
+                <td><a class="btn btn-sm btn-outline" href="{{ url_for('admin_requests') }}">Review</a></td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">✅</div>
+        <p>You're all caught up. No pending requests.</p>
+    </div>
+    {% endif %}
+
+    <h2 class="section-title" style="font-size:20px; margin-top:34px;">Recent Admin Activity</h2>
+    {% if recent_activity %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>When</th><th>Admin</th><th>Action</th><th>Detail</th><th>IP</th></tr>
+            {% for a in recent_activity %}
+            <tr>
+                <td>{{ a.created_at[:16].replace('T',' ') }}</td>
+                <td>{{ a.admin_username }}</td>
+                <td>{{ a.action }}</td>
+                <td>{{ a.detail or '—' }}</td>
+                <td>{{ a.ip }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <p class="muted" style="font-size:13.5px;">No activity logged yet.</p>
+    {% endif %}
+</section>
+
+{% endblock %}

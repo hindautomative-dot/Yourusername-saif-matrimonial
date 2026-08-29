@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section class="hero">
+    <div class="hero-inner">
+        <div>
+            <h1>{{ hero_heading|safe }}</h1>
+            <p class="lead">{{ hero_subheading }}</p>
+            <div class="hero-ctas">
+                <a href="#profiles" class="btn btn-primary">Browse Profiles</a>
+                <a href="{{ url_for('how_it_works') }}" class="btn btn-outline">How It Works</a>
+            </div>
+        </div>
+        <div class="hero-panel">
+            <h3>Unlock a Profile</h3>
+            <p>No subscriptions. Pay only for the profile you're genuinely interested in.</p>
+            <div class="hero-price">₹{{ unlock_price }}</div>
+            <p>per profile, verified manually within hours.</p>
+        </div>
+    </div>
+</section>
+
+{% if hero_banners %}
+<section class="container banner-strip">
+    {% for b in hero_banners %}
+    <a class="banner-slot" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
+        <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}">
+    </a>
+    {% endfor %}
+</section>
+{% endif %}
+
+<div class="trust-strip">{{ business_tagline }} — {{ business_location }}</div>
+
+<section class="container">
+    <h2 class="section-title">Why Families Trust Us</h2>
+    <p class="section-sub">A simple, respectful and privacy-conscious way to explore matrimonial connections.</p>
+    <div class="trust-grid">
+        <div class="trust-card">
+            <div class="icon">🗂️</div>
+            <b>Carefully Managed Profiles</b>
+            <span>Every profile is added and reviewed by our team before it goes live.</span>
+        </div>
+        <div class="trust-card">
+            <div class="icon">🔒</div>
+            <b>Privacy-Conscious Access</b>
+            <span>Photos and contact details stay protected until a request is approved.</span>
+        </div>
+        <div class="trust-card">
+            <div class="icon">🪙</div>
+            <b>Simple ₹{{ unlock_price }} Unlock</b>
+            <span>Pay only for the one profile you're interested in — no bulk membership fees.</span>
+        </div>
+        <div class="trust-card">
+            <div class="icon">🤝</div>
+            <b>Personal Assistance</b>
+            <span>Our team is a phone call or WhatsApp message away whenever you need help.</span>
+        </div>
+    </div>
+</section>
+
+<section class="container">
+    <h2 class="section-title">How It Works</h2>
+    <p class="section-sub">Four simple steps to connect.</p>
+    <div class="steps-grid">
+        <div class="step-card">
+            <div class="step-num">01</div>
+            <b>Browse</b>
+            <span>Explore available matrimonial profiles from the comfort of your home.</span>
+        </div>
+        <div class="step-card">
+            <div class="step-num">02</div>
+            <b>Choose</b>
+            <span>Select the profile you are genuinely interested in.</span>
+        </div>
+        <div class="step-card">
+            <div class="step-num">03</div>
+            <b>Pay ₹{{ unlock_price }}</b>
+            <span>Make the small UPI payment and upload your payment proof.</span>
+        </div>
+        <div class="step-card">
+            <div class="step-num">04</div>
+            <b>Get Connected</b>
+            <span>After manual verification, the profile becomes available to you.</span>
+        </div>
+    </div>
+    <p class="muted center" style="font-size:12.5px; margin-top:6px;">Payment verification is completed manually — no automatic payment claims.</p>
+</section>
+
+{% if mid_banners %}
+<section class="container banner-strip">
+    {% for b in mid_banners %}
+    <a class="banner-slot" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
+        <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}">
+    </a>
+    {% endfor %}
+</section>
+{% endif %}
+
+<section class="container" id="profiles">
+    <h2 class="section-title">Browse Profiles</h2>
+    <p class="section-sub">Use the filters below to find profiles that match what you're looking for.</p>
+
+    <form method="GET" action="{{ url_for('index') }}#profiles" class="filter-bar">
+        <div class="filter-row">
+            <select name="gender">
+                <option value="">Any Gender</option>
+                <option value="Male" {{ 'selected' if filters.gender=='Male' }}>Male</option>
+                <option value="Female" {{ 'selected' if filters.gender=='Female' }}>Female</option>
+            </select>
+            <input type="number" name="min_age" placeholder="Min Age" min="18" max="90" value="{{ filters.min_age }}">
+            <input type="number" name="max_age" placeholder="Max Age" min="18" max="90" value="{{ filters.max_age }}">
+            <select name="city">
+                <option value="">Any City</option>
+                {% for c in filter_options.cities %}
+                <option value="{{ c }}" {{ 'selected' if filters.city==c }}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-row">
+            <select name="marital_status">
+                <option value="">Any Marital Status</option>
+                {% for m in filter_options.marital_statuses %}
+                <option value="{{ m }}" {{ 'selected' if filters.marital_status==m }}>{{ m }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="education" placeholder="Education" value="{{ filters.education }}">
+            <input type="text" name="profession" placeholder="Profession" value="{{ filters.profession }}">
+            <select name="community">
+                <option value="">Any Community</option>
+                {% for c in filter_options.communities %}
+                <option value="{{ c }}" {{ 'selected' if filters.community==c }}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-row filter-actions">
+            <button class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+            {% if any_filter_active %}
+            <a class="btn btn-outline btn-sm" href="{{ url_for('index') }}#profiles">Clear Filters</a>
+            {% endif %}
+            <span class="filter-count">{{ total }} profile{{ 's' if total != 1 }} found</span>
+        </div>
+    </form>
+
+    {% if profiles %}
+    <div class="profile-grid">
+        {% for p in profiles %}
+        <a class="profile-card" href="{{ url_for('profile_preview', profile_code=p.profile_code) }}">
+            <div class="profile-photo">
+                {% if p.photo_preview_name %}
+                    <img src="{{ url_for('profile_preview_image', profile_code=p.profile_code) }}" alt="Profile preview">
+                {% endif %}
+                <div class="photo-lock-badge">
+                    <div class="lock-circle">🔒</div>
+                    <span>View to unlock</span>
+                </div>
+            </div>
+            <div class="profile-body">
+                <div class="profile-code-row">
+                    <span class="profile-code">{{ p.profile_code }}</span>
+                    {% if p.admin_verified %}<span class="badge badge-verified" title="Reviewed by our team">Admin Reviewed</span>{% endif %}
+                </div>
+                <div class="profile-meta">
+                    {{ p.age }} yrs · {{ p.gender }}<br>
+                    📍 {{ p.city }}
+                    {% if p.marital_status %}<br>💍 {{ p.marital_status }}{% endif %}
+                </div>
+                <div class="badge-row">
+                    {% if p.phone_verified %}<span class="badge badge-mini">Phone Verified</span>{% endif %}
+                    {% if p.photo_reviewed %}<span class="badge badge-mini">Photo Reviewed</span>{% endif %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% set base_args = active_filters %}
+        {% if page > 1 %}
+        <a class="page-link" href="{{ url_for('index', page=page-1, **base_args) }}#profiles">‹ Prev</a>
+        {% endif %}
+        <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="page-link" href="{{ url_for('index', page=page+1, **base_args) }}#profiles">Next ›</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">🌿</div>
+        {% if any_filter_active %}
+        <p>No profiles match these filters. Try widening your search.</p>
+        <a class="btn btn-outline" href="{{ url_for('index') }}#profiles" style="margin-top:10px;">Clear Filters</a>
+        {% else %}
+        <p>New profiles are being added regularly. Please check back soon.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+
+{% if footer_banners %}
+<section class="container banner-strip">
+    {% for b in footer_banners %}
+    <a class="banner-slot" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
+        <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}">
+    </a>
+    {% endfor %}
+</section>
+{% endif %}
+
+{% endblock %}

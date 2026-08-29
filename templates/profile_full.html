@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }} — {{ profile.profile_code }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card">
+        {% if profile.photo_original_name %}
+        <img class="full-photo" src="{{ url_for('profile_original_photo', profile_code=profile.profile_code) }}" alt="{{ profile.name }}">
+        {% endif %}
+
+        <h2 class="serif" style="color:var(--emerald-dark); margin:0 0 4px;">{{ profile.name }}</h2>
+        <p class="muted" style="font-size:13px; margin:0 0 10px;">{{ profile.profile_code }}</p>
+        <div class="badge-row" style="margin-bottom:14px;">
+            {% if profile.admin_verified %}<span class="badge badge-verified">Admin Reviewed</span>{% endif %}
+            {% if profile.phone_verified %}<span class="badge badge-mini">Phone Verified</span>{% endif %}
+            {% if profile.photo_reviewed %}<span class="badge badge-mini">Photo Reviewed</span>{% endif %}
+        </div>
+
+        <h3 class="section-label">Basic Details</h3>
+        <div class="profile-meta" style="font-size:15px; line-height:2;">
+            🎂 {{ profile.age }} Years &nbsp;|&nbsp; ⚧ {{ profile.gender }}<br>
+            📍 {{ profile.city }}{% if profile.state %}, {{ profile.state }}{% endif %}<br>
+            {% if profile.marital_status %}💍 {{ profile.marital_status }}<br>{% endif %}
+            {% if profile.height %}📏 {{ profile.height }}<br>{% endif %}
+            {% if profile.mother_tongue %}🗣️ {{ profile.mother_tongue }}<br>{% endif %}
+        </div>
+
+        {% if profile.education or profile.profession or profile.income or profile.work_location %}
+        <h3 class="section-label">Education &amp; Profession</h3>
+        <div class="profile-meta" style="font-size:15px; line-height:2;">
+            {% if profile.education %}🎓 {{ profile.education }}<br>{% endif %}
+            {% if profile.profession %}💼 {{ profile.profession }}<br>{% endif %}
+            {% if profile.work_location %}🏢 {{ profile.work_location }}<br>{% endif %}
+            {% if profile.income %}💰 {{ profile.income }}<br>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if profile.community or profile.sect or profile.family_details %}
+        <h3 class="section-label">Family &amp; Community</h3>
+        <div class="profile-meta" style="font-size:15px; line-height:2;">
+            {% if profile.community %}👥 {{ profile.community }}{% if profile.sect %} — {{ profile.sect }}{% endif %}<br>{% endif %}
+        </div>
+        {% if profile.family_details %}
+        <p style="font-size:14.5px; line-height:1.6;">{{ profile.family_details }}</p>
+        {% endif %}
+        {% endif %}
+
+        {% if profile.bio %}
+        <h3 class="section-label">About</h3>
+        <p style="font-size:14.5px; line-height:1.6;">{{ profile.bio }}</p>
+        {% endif %}
+
+        <div class="card" style="background:#fdfaf3; margin-top:20px; border-color:var(--gold-soft);">
+            <b>Interested? Get in touch:</b>
+            {% if profile.contact_visible and profile.contact_number %}
+            <p style="margin:6px 0 0;">📞 {{ profile.contact_number }}</p>
+            {% else %}
+            <p class="muted" style="margin:6px 0 10px; font-size:13.5px;">
+                This profile's contact number is shared through our team rather than displayed directly.
+            </p>
+            <a class="btn btn-primary btn-sm"
+               href="https://wa.me/91{{ whatsapp_number }}?text=Hi%2C%20I%27d%20like%20to%20connect%20regarding%20profile%20{{ profile.profile_code }}."
+               target="_blank" rel="noopener">Message Us on WhatsApp</a>
+            {% endif %}
+        </div>
+
+        <div class="privacy-note">
+            Please respect the privacy of the person represented in this profile.
+            Do not share, screenshot, or redistribute their photo or information outside genuine matrimonial consideration.
+        </div>
+    </div>
+</section>
+
+{% endblock %}

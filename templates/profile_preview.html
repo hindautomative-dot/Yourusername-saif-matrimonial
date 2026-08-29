@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Profile {{ profile.profile_code }} — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card">
+        <div class="profile-photo" style="height:320px; border-radius:14px; margin-bottom:20px;">
+            {% if profile.photo_preview_name %}
+                <img src="{{ url_for('profile_preview_image', profile_code=profile.profile_code) }}" alt="Profile preview" style="border-radius:14px;">
+            {% endif %}
+            {% if not already_unlocked %}
+            <div class="photo-lock-badge" style="border-radius:14px;">
+                <div class="lock-circle">🔒</div>
+                <span>Unlock to view full photo</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <h2 class="serif" style="color:var(--emerald-dark); margin:0 0 4px;">Profile {{ profile.profile_code }}</h2>
+        <div class="badge-row" style="margin-bottom:10px;">
+            {% if profile.admin_verified %}<span class="badge badge-verified">Admin Reviewed</span>{% endif %}
+            {% if profile.phone_verified %}<span class="badge badge-mini">Phone Verified</span>{% endif %}
+            {% if profile.photo_reviewed %}<span class="badge badge-mini">Photo Reviewed</span>{% endif %}
+        </div>
+        <div class="profile-meta" style="font-size:15px; line-height:2;">
+            🎂 Age: {{ profile.age }} &nbsp;|&nbsp; ⚧ {{ profile.gender }}<br>
+            📍 {{ profile.city }}{% if profile.state %}, {{ profile.state }}{% endif %}<br>
+            {% if profile.marital_status %}💍 {{ profile.marital_status }}<br>{% endif %}
+            {% if profile.education %}🎓 {{ profile.education }}<br>{% endif %}
+            {% if profile.profession %}💼 {{ profile.profession }}<br>{% endif %}
+            {% if profile.community %}👥 {{ profile.community }}{% if profile.sect %} — {{ profile.sect }}{% endif %}<br>{% endif %}
+            {% if profile.mother_tongue %}🗣️ {{ profile.mother_tongue }}<br>{% endif %}
+            {% if profile.height %}📏 {{ profile.height }}<br>{% endif %}
+        </div>
+
+        {% if already_unlocked %}
+        <a class="btn btn-primary btn-block" style="margin-top:20px;" href="{{ url_for('profile_full', profile_code=profile.profile_code) }}">View Full Profile</a>
+        {% else %}
+        <div class="card" style="background:#fdfaf3; margin-top:20px; border-color:var(--gold-soft);">
+            <b>Interested in this profile?</b>
+            <p class="muted" style="font-size:13.5px; margin:6px 0 14px;">Contact details and the original photo stay protected until your payment is verified.</p>
+            <a class="btn btn-gold btn-block" href="{{ url_for('unlock', profile_code=profile.profile_code) }}">Unlock this Profile for ₹{{ unlock_price }}</a>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Request Submitted — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card center">
+        <div style="font-size:40px; margin-bottom:10px;">✅</div>
+        <h2 class="serif" style="color:var(--emerald-dark); margin-top:0;">Request Submitted Successfully</h2>
+        <p class="muted" style="font-size:14.5px;">
+            Your payment will be reviewed manually. Once confirmed, profile {{ profile.profile_code }}
+            will become available under "My Requests".
+        </p>
+
+        <div class="upi-id-box" style="font-size:20px; letter-spacing:2px;">{{ request_code }}</div>
+        <p class="muted" style="font-size:13px;">
+            This is your reference code — worth saving if you contact us on WhatsApp about this
+            request. To actually view "My Requests" later, you'll verify your mobile number with
+            an OTP (no password to remember).
+        </p>
+
+        <a class="btn btn-primary btn-block" href="{{ url_for('verify_access') }}" style="margin-top:16px;">Go to My Requests</a>
+        <a class="btn btn-outline btn-block" href="{{ url_for('index') }}" style="margin-top:10px;">Back to Home</a>
+    </div>
+</section>
+
+{% endblock %}

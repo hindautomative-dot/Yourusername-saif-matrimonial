@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Edit Profile {{ profile.profile_code }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <h1 class="section-title">Edit Profile {{ profile.profile_code }}</h1>
+
+    <form method="POST" enctype="multipart/form-data" class="card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        {% set f = form if form else profile %}
+
+        <h3 class="section-label">Basic</h3>
+        <label>Full Name *</label>
+        <input type="text" name="name" value="{{ f.name }}" required>
+
+        <label>Age * (18–90)</label>
+        <input type="number" name="age" min="18" max="90" value="{{ f.age }}" required>
+
+        <label>Gender *</label>
+        <select name="gender" required>
+            <option value="Male" {{ 'selected' if f.gender=='Male' }}>Male</option>
+            <option value="Female" {{ 'selected' if f.gender=='Female' }}>Female</option>
+        </select>
+
+        <label>City *</label>
+        <input type="text" name="city" value="{{ f.city }}" required>
+
+        <label>State</label>
+        <input type="text" name="state" value="{{ f.state or '' }}">
+
+        <h3 class="section-label">Marriage</h3>
+        <label>Marital Status</label>
+        <input type="text" name="marital_status" value="{{ f.marital_status or '' }}">
+
+        <label>Community</label>
+        <input type="text" name="community" value="{{ f.community or '' }}">
+
+        <label>Sect / Maslak</label>
+        <input type="text" name="sect" value="{{ f.sect or '' }}">
+
+        <label>Mother Tongue</label>
+        <input type="text" name="mother_tongue" value="{{ f.mother_tongue or '' }}">
+
+        <h3 class="section-label">Education &amp; Profession</h3>
+        <label>Education</label>
+        <input type="text" name="education" value="{{ f.education or '' }}">
+
+        <label>Profession</label>
+        <input type="text" name="profession" value="{{ f.profession or '' }}">
+
+        <label>Work Location</label>
+        <input type="text" name="work_location" value="{{ f.work_location or '' }}">
+
+        <label>Income (optional)</label>
+        <input type="text" name="income" value="{{ f.income or '' }}">
+
+        <h3 class="section-label">Personal</h3>
+        <label>Height</label>
+        <input type="text" name="height" value="{{ f.height or '' }}">
+
+        <label>Family Details</label>
+        <textarea name="family_details" rows="3">{{ f.family_details or '' }}</textarea>
+
+        <label>Bio / About</label>
+        <textarea name="bio" rows="4">{{ f.bio or '' }}</textarea>
+
+        <h3 class="section-label">Contact &amp; Privacy</h3>
+        <label>Contact Number</label>
+        <input type="text" name="contact_number" value="{{ f.contact_number or '' }}">
+
+        <label class="checkbox-row">
+            <input type="checkbox" name="contact_visible" {{ 'checked' if f.contact_visible }}>
+            <span>Show this contact number directly to users who unlock this profile</span>
+        </label>
+
+        <h3 class="section-label">Verification Badges</h3>
+        <label class="checkbox-row">
+            <input type="checkbox" name="admin_verified" {{ 'checked' if f.admin_verified }}>
+            <span>Admin Reviewed</span>
+        </label>
+        <label class="checkbox-row">
+            <input type="checkbox" name="phone_verified" {{ 'checked' if f.phone_verified }}>
+            <span>Phone Verified</span>
+        </label>
+        <label class="checkbox-row">
+            <input type="checkbox" name="photo_reviewed" {{ 'checked' if f.photo_reviewed }}>
+            <span>Photo Reviewed</span>
+        </label>
+
+        <h3 class="section-label">Photo</h3>
+        <label>Replace Photo (optional)</label>
+        <input type="file" name="photo" accept="image/*">
+        <div class="helptext">Leave empty to keep the current photo.</div>
+
+        <div style="margin-top:22px; display:flex; gap:10px;">
+            <button class="btn btn-primary" type="submit">Save Changes</button>
+            <a class="btn btn-outline" href="{{ url_for('admin_profiles') }}">Cancel</a>
+        </div>
+    </form>
+</section>
+
+{% endblock %}

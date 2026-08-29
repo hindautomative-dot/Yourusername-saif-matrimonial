@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Banners{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">Banners</h1>
+    <p class="section-sub">Promotional banner slots for the homepage — hero (below the main hero), mid (between "How It Works" and profile browsing), and footer (above the footer).</p>
+
+    <a class="btn btn-primary" href="{{ url_for('admin_add_banner') }}" style="margin-bottom:20px; display:inline-block;">+ Add Banner</a>
+
+    {% if banners %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Preview</th><th>Slot</th><th>Title</th><th>Active</th><th>Dates</th><th>Actions</th></tr>
+            {% for b in banners %}
+            <tr>
+                <td><img src="{{ url_for('static', filename='banners/' + b.image_name) }}" style="width:90px; border-radius:8px;"></td>
+                <td>{{ b.slot }}</td>
+                <td>{{ b.title or '—' }}</td>
+                <td>{{ "Yes" if b.is_active else "No" }}</td>
+                <td style="font-size:12.5px;">
+                    {{ b.start_date or 'any' }} → {{ b.end_date or 'any' }}
+                </td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <form method="POST" action="{{ url_for('admin_toggle_banner', banner_id=b.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-outline" type="submit">{{ "Deactivate" if b.is_active else "Activate" }}</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_delete_banner', banner_id=b.id) }}"
+                          onsubmit="return confirm('Delete this banner?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">🖼️</div>
+        <p>No banners added yet.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

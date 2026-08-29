@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}My Requests — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">My Requests</h1>
+    <p class="section-sub">Showing requests for {{ phone }} (verified via OTP) — <a href="{{ url_for('exit_verification') }}" style="color:var(--emerald); text-decoration:underline;">not you?</a></p>
+
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Profile</th><th>Requested</th><th>Status</th><th></th></tr>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.profile_code }} — {{ r.name }}, {{ r.age }}, {{ r.city }}</td>
+                <td>{{ r.requested_at[:16].replace('T', ' ') }}</td>
+                <td>
+                    {% if r.status == 'pending' %}<span class="badge badge-pending">Pending Review</span>
+                    {% elif r.status == 'unlocked' %}<span class="badge badge-unlocked">Unlocked</span>
+                    {% else %}<span class="badge badge-rejected">Rejected</span>{% endif %}
+                </td>
+                <td>
+                    {% if r.status == 'unlocked' %}
+                    <a class="btn btn-sm btn-primary" href="{{ url_for('profile_full', profile_code=r.profile_code) }}">View Profile</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">📭</div>
+        <p>You haven't requested any profiles yet.</p>
+        <a class="btn btn-primary" href="{{ url_for('index') }}#profiles" style="margin-top:14px;">Browse Profiles</a>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="error-page">
+        <div class="error-code">{{ code }}</div>
+        <div class="error-title">{{ title }}</div>
+        <p class="error-msg">{{ message }}</p>
+        <a class="btn btn-primary" href="{{ url_for('index') }}">Back to Home</a>
+    </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Terms of Use — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <h1 class="section-title">Terms of Use</h1>
+    <div class="card" style="font-size:14.5px; line-height:1.8; color:var(--charcoal);">
+        <p><b>Purpose.</b> {{ business_name }} exists to help facilitate genuine matrimonial (Nikah)
+        connections. It is not a dating, social-networking, or casual-introduction service.</p>
+
+        <p><b>Eligibility.</b> This service is intended for adults genuinely seeking marriage or
+        assisting a family member in doing so.</p>
+
+        <p><b>Profile accuracy.</b> Profiles are added by our team based on information provided to
+        us. While we review submissions, we cannot independently verify every detail (education,
+        income, marital history, etc.) unless a profile is explicitly marked as admin-reviewed for
+        that specific detail. Please exercise your own judgement and diligence before proceeding
+        with any match.</p>
+
+        <p><b>Payments.</b> The ₹{{ unlock_price }} unlock fee is a one-time charge to view one
+        specific profile's protected photo and permitted contact information. Payments are
+        verified manually; we do not claim automatic or instant payment confirmation.</p>
+
+        <p><b>Acceptable use.</b> By using this site you agree not to misuse, screenshot for
+        redistribution, scrape, or share any profile's photograph or contact information with
+        anyone outside genuine matrimonial consideration.</p>
+
+        <p><b>No guarantees.</b> We do not guarantee a match, a marriage, or any particular outcome.
+        We facilitate introductions; the decision to proceed is entirely yours.</p>
+
+        <p><b>Profile removal.</b> If you would like a profile removed, corrected, or would like your
+        own submitted data deleted, please contact us at {{ business_phone }}{% if business_email %} or {{ business_email }}{% endif %}.</p>
+
+        <p><b>Changes.</b> These terms may be updated from time to time; continued use of the site
+        after changes constitutes acceptance of the revised terms.</p>
+    </div>
+</section>
+
+{% endblock %}
