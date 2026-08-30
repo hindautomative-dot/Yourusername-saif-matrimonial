@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Registration Submitted — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card center">
+        <div style="font-size:40px; margin-bottom:10px;">✅</div>
+        <h2 class="serif" style="color:var(--emerald-dark); margin-top:0;">Registration Submitted Successfully</h2>
+        <p class="muted" style="font-size:14.5px;">
+            Thank you for registering. Our team will review your details and payment, and your profile
+            will go live for others to browse once approved.
+        </p>
+
+        <div class="upi-id-box" style="font-size:20px; letter-spacing:2px;">{{ request_code }}</div>
+        <p class="muted" style="font-size:13px;">
+            This is your reference code — worth saving if you contact us on WhatsApp about this registration.
+        </p>
+
+        <a class="btn btn-primary btn-block" href="{{ url_for('index') }}" style="margin-top:16px;">Back to Home</a>
+        <a class="btn btn-outline btn-block" href="{{ url_for('index') }}#profiles" style="margin-top:10px;">Browse Profiles</a>
+    </div>
+</section>
+
+{% endblock %}

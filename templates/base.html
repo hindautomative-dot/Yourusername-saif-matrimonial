@@ -21,12 +21,16 @@
         --emerald: {{ primary_color }};
         --emerald-dark: {{ secondary_color }};
         --gold: {{ accent_color }};
+        {% if nav_bg_image %}--nav-bg-image: url("{{ url_for('static', filename='branding/' + nav_bg_image) }}");{% endif %}
+        {% if hero_bg_image %}--hero-bg-image: url("{{ url_for('static', filename='branding/' + hero_bg_image) }}");{% endif %}
+        {% if section_bg_image %}--section-bg-image: url("{{ url_for('static', filename='branding/' + section_bg_image) }}");{% endif %}
+        {% if footer_bg_image %}--footer-bg-image: url("{{ url_for('static', filename='branding/' + footer_bg_image) }}");{% endif %}
     }
 </style>
 </head>
-<body>
+<body{% if section_bg_image %} class="has-section-bg"{% endif %}>
 
-<header class="site-header">
+<header class="site-header" id="siteHeader">
     <div class="site-header-inner">
         <a href="{{ url_for('index') }}" class="brand">
             {% if logo_image %}
@@ -48,8 +52,9 @@
             <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
             <a href="{{ url_for('index') }}#contact">Contact</a>
             {% if session.get('is_admin') %}
-                <a href="{{ url_for('admin_dashboard') }}" class="nav-cta">Admin <span id="adminPendingBadge" class="badge badge-pending" style="display:none; margin-left:4px;"></span></a>
+                <a href="{{ url_for('admin_dashboard') }}" class="nav-cta nav-cta-outline">Admin <span id="adminPendingBadge" class="badge badge-pending" style="display:none; margin-left:4px;"></span></a>
             {% endif %}
+            <a href="{{ url_for('register_yourself') }}" class="nav-cta">Register Yourself — ₹{{ registration_price }}</a>
         </nav>
 
         <button class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
@@ -62,8 +67,20 @@
         <a href="{{ url_for('faq') }}">FAQ</a>
         <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
         <a href="{{ url_for('index') }}#contact">Contact</a>
+        <a href="{{ url_for('register_yourself') }}" class="nav-mobile-cta">Register Yourself — ₹{{ registration_price }}</a>
     </nav>
 </header>
+
+{% if top_banners %}
+<div class="top-banner-strip">
+    {% for b in top_banners %}
+    <a class="top-banner-slot" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
+        {% if b.title %}<span class="top-banner-tag">Sponsored</span>{% endif %}
+        <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Offer' }}">
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
 
 <main>
     <div class="container">
@@ -81,28 +98,37 @@
 
 <footer class="site-footer">
     <div class="footer-inner">
-        <div class="footer-brand">
+        <div class="footer-col footer-brand">
             <strong>{{ business_name }}</strong>
-            <p class="muted" style="margin:8px 0 0; font-size:13px; color:rgba(232,217,184,.75);">{{ business_tagline }}</p>
+            <p class="muted" style="margin:8px 0 0; font-size:13px; color:rgba(232,217,184,.75); max-width:260px;">{{ business_tagline }}</p>
+            <a class="btn btn-sm btn-gold" style="margin-top:16px;" href="{{ url_for('register_yourself') }}">Register Yourself — ₹{{ registration_price }}</a>
         </div>
-        <div class="footer-links" id="contact">
+        <div class="footer-col">
+            <h4>Quick Links</h4>
             <a href="{{ url_for('index') }}">Home</a>
             <a href="{{ url_for('index') }}#profiles">Browse Profiles</a>
-            <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
             <a href="{{ url_for('how_it_works') }}">How It Works</a>
+            <a href="{{ url_for('register_yourself') }}">Register</a>
             <a href="{{ url_for('faq') }}">FAQ</a>
-            <a href="{{ url_for('privacy') }}">Privacy</a>
-            <a href="{{ url_for('terms') }}">Terms</a>
+        </div>
+        <div class="footer-col" id="contact">
+            <h4>For Users</h4>
+            <a href="{{ url_for('register_yourself') }}">Register Yourself</a>
+            <a href="{{ url_for('index') }}#profiles">Browse Profiles</a>
+            <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
             <a href="{{ url_for('admin_login') }}">Admin</a>
         </div>
-        <div>
-            <div style="font-size:13.5px;">📞 {{ business_phone }}</div>
+        <div class="footer-col">
+            <h4>Legal &amp; Contact</h4>
+            <a href="{{ url_for('privacy') }}">Privacy Policy</a>
+            <a href="{{ url_for('terms') }}">Terms</a>
+            <div style="font-size:13.5px; margin-top:10px;">📞 {{ business_phone }}</div>
             {% if business_email %}<div style="font-size:13.5px; margin-top:4px;">✉️ {{ business_email }}</div>{% endif %}
             <div style="font-size:13.5px; margin-top:4px;">📍 {{ business_location }}</div>
         </div>
     </div>
     <div class="footer-bottom">
-        © {{ current_year }} {{ business_name }}. All rights reserved.
+        © {{ current_year }} {{ business_name }}. All rights reserved. &nbsp;·&nbsp; Trusted Connections, Blessed Beginnings
         {% if footer_text %}&nbsp;·&nbsp;{{ footer_text }}{% endif %}
     </div>
 </footer>

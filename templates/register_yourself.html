@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Register Yourself — ₹{{ registration_price }} — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card reg-card">
+        <div class="reg-badge">Almost Free</div>
+        <h2 class="serif center" style="color:var(--emerald-dark); margin-top:10px;">Register Yourself — ₹{{ registration_price }}</h2>
+        <p class="center muted" style="font-size:14px; max-width:440px; margin:6px auto 0;">
+            Why only search when you can be found too? Create your matrimonial profile for just ₹{{ registration_price }}
+            and open the door to meaningful connections.
+        </p>
+
+        <div class="qr-box">
+            {% if qr_image %}
+            <img src="{{ url_for('static', filename='branding/' + qr_image) }}" alt="UPI QR code">
+            {% else %}
+            <img src="{{ url_for('static', filename='upi_qr.png') }}" alt="UPI QR code"
+                 onerror="this.style.display='none'; this.parentElement.innerText='Admin: upload a QR code in Website Settings.';">
+            {% endif %}
+        </div>
+        <div class="upi-id-box">UPI ID: {{ upi_id }}</div>
+
+        <ol class="steps-list">
+            <li>Scan the QR code above and pay ₹{{ registration_price }}.</li>
+            <li>Take a screenshot of the successful payment.</li>
+            <li>Fill in your details below and upload the screenshot.</li>
+            <li>Our team reviews your profile before it goes live.</li>
+            <li>Once approved, interested people can browse and request to connect with you.</li>
+        </ol>
+
+        <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <h3 class="section-label" style="margin-top:22px;">Your Details</h3>
+
+            <label for="name">Full Name *</label>
+            <input type="text" id="name" name="name" required>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div>
+                    <label for="age">Age *</label>
+                    <input type="number" id="age" name="age" min="18" max="90" required>
+                </div>
+                <div>
+                    <label for="gender">Gender *</label>
+                    <select id="gender" name="gender" required>
+                        <option value="">Select</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                </div>
+            </div>
+
+            <label for="phone">Your Mobile Number *</label>
+            <input type="tel" id="phone" name="phone" placeholder="10-digit mobile number" pattern="[6-9][0-9]{9}" required>
+            <div class="helptext">This becomes your login for checking status later.</div>
+
+            <label for="city">City *</label>
+            <input type="text" id="city" name="city" required>
+
+            <label for="marital_status">Marital Status</label>
+            <select id="marital_status" name="marital_status">
+                <option value="">Select (optional)</option>
+                <option value="Never Married">Never Married</option>
+                <option value="Divorced">Divorced</option>
+                <option value="Widowed">Widowed</option>
+            </select>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div>
+                    <label for="education">Education</label>
+                    <input type="text" id="education" name="education">
+                </div>
+                <div>
+                    <label for="profession">Profession</label>
+                    <input type="text" id="profession" name="profession">
+                </div>
+            </div>
+
+            <label for="bio">About You (optional)</label>
+            <textarea id="bio" name="bio" rows="3" placeholder="A few lines about yourself and what you're looking for"></textarea>
+
+            <label for="photo">Your Photo (optional, recommended)</label>
+            <input type="file" id="photo" name="photo" accept="image/*" data-autoresize>
+            <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
+            <div class="helptext">Kept private — only shown, watermarked, to people who unlock your profile.</div>
+
+            <h3 class="section-label">Payment Proof</h3>
+            <label for="payment_proof">Payment Screenshot *</label>
+            <input type="file" id="payment_proof" name="payment_proof" accept="image/*" required data-autoresize>
+
+            <label class="checkbox-row">
+                <input type="checkbox" name="consent" required>
+                <span>I have completed the ₹{{ registration_price }} payment and understand my profile goes live only after admin review.</span>
+            </label>
+
+            <button class="btn btn-gold btn-block" type="submit" style="margin-top:22px;">Register Myself — ₹{{ registration_price }}</button>
+        </form>
+
+        <p class="muted center" style="font-size:12.5px; margin-top:14px;">
+            No exaggerated promises — just a genuine, privacy-first way to be discovered by serious, verified matches.
+        </p>
+    </div>
+</section>
+
+{% endblock %}

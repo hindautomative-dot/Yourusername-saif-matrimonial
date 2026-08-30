@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Self-Registrations{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">Self-Registrations (₹{{ registration_price }})</h1>
+    <p class="section-sub">People who registered themselves directly from the homepage. Approve to publish them as a browsable profile.</p>
+
+    <div class="tabs">
+        <a href="{{ url_for('admin_registrations', status='pending') }}" class="{{ 'active' if status_filter=='pending' }}">Pending</a>
+        <a href="{{ url_for('admin_registrations', status='approved') }}" class="{{ 'active' if status_filter=='approved' }}">Approved</a>
+        <a href="{{ url_for('admin_registrations', status='rejected') }}" class="{{ 'active' if status_filter=='rejected' }}">Rejected</a>
+        <a href="{{ url_for('admin_registrations', status='all') }}" class="{{ 'active' if status_filter=='all' }}">All</a>
+    </div>
+
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Name</th><th>Phone</th><th>Age/Gender</th><th>City</th><th>When</th><th>Proof</th><th>Status</th><th>Actions</th></tr>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.name }}</td>
+                <td>{{ r.phone }}</td>
+                <td>{{ r.age }} · {{ r.gender }}</td>
+                <td>{{ r.city }}</td>
+                <td>{{ r.requested_at[:16].replace('T',' ') }}</td>
+                <td>
+                    {% if r.payment_proof_name %}
+                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_registration_proof', reg_id=r.id) }}" target="_blank" rel="noopener">View Proof</a>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if r.status == 'pending' %}<span class="badge badge-pending">Pending</span>
+                    {% elif r.status == 'approved' %}<span class="badge badge-unlocked">Approved</span>
+                    {% else %}<span class="badge badge-rejected">Rejected</span>{% endif %}
+                </td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    {% if r.status == 'pending' %}
+                    <form method="POST" action="{{ url_for('admin_decide_registration', reg_id=r.id, action='approve') }}"
+                          onsubmit="return confirm('Approve and publish {{ r.name }}\'s profile?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-primary" type="submit">Approve &amp; Publish</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_decide_registration', reg_id=r.id, action='reject') }}"
+                          onsubmit="return confirm('Reject this registration?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+                    </form>
+                    {% elif r.profile_id %}
+                    <span class="muted" style="font-size:12.5px;">Profile created</span>
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">✅</div>
+        <p>No registrations here.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

@@ -54,11 +54,54 @@
 
         <label>Package Size — how many profiles the package price covers</label>
         <input type="number" name="package_size" min="2" max="10" value="{{ settings.package_size }}">
-        <div class="helptext">Example: Unlock price ₹41, Package price ₹99, Package size 3 → shows as "1 profile for ₹41, or 3 for ₹99".</div>
+        <div class="helptext">Example: Unlock price ₹49, Package price ₹149, Package size 4 → shows as "1 profile for ₹49, or 4 for ₹149".</div>
+
+        <label class="checkbox-row">
+            <input type="checkbox" name="package_offer_enabled" value="1" {{ 'checked' if settings.package_offer_enabled == '1' }}>
+            <span>Show the multi-profile package offer on the homepage</span>
+        </label>
+
+        <label>Register Yourself Price (₹)</label>
+        <input type="text" name="registration_price" value="{{ settings.registration_price }}">
+        <div class="helptext">Shown as the "Register Yourself" self-registration price across the site.</div>
 
         <label>UPI ID</label>
         <input type="text" name="upi_id" value="{{ settings.upi_id }}">
-        <div class="helptext">Also add your real UPI QR code image at static/upi_qr.png in the project files.</div>
+
+        <label style="margin-top:14px;">UPI QR Code</label>
+        <input type="file" name="qr_image" accept="image/*">
+        <div class="helptext">Shown on the Unlock, Package Checkout and Register Yourself payment pages.</div>
+        {% if settings.qr_image %}
+        <div class="helptext">Current QR code:</div>
+        <img src="{{ url_for('static', filename='branding/' + settings.qr_image) }}" style="height:120px; margin-top:6px; border-radius:8px;">
+        {% endif %}
+
+        <h3 class="section-label">Appearance — Backgrounds</h3>
+        <p class="helptext">Upload images to customise backgrounds site-wide, without touching any code. Leave blank to keep the current one.</p>
+
+        <label>Navbar Background</label>
+        <input type="file" name="nav_bg_image" accept="image/*">
+        {% if settings.nav_bg_image %}
+        <label class="checkbox-row"><input type="checkbox" name="clear_nav_bg_image" value="1"><span>Remove current navbar background</span></label>
+        {% endif %}
+
+        <label style="margin-top:14px;">Hero Section Background</label>
+        <input type="file" name="hero_bg_image" accept="image/*">
+        {% if settings.hero_bg_image %}
+        <label class="checkbox-row"><input type="checkbox" name="clear_hero_bg_image" value="1"><span>Remove current hero background</span></label>
+        {% endif %}
+
+        <label style="margin-top:14px;">Section Background (subtle, site-wide)</label>
+        <input type="file" name="section_bg_image" accept="image/*">
+        {% if settings.section_bg_image %}
+        <label class="checkbox-row"><input type="checkbox" name="clear_section_bg_image" value="1"><span>Remove current section background</span></label>
+        {% endif %}
+
+        <label style="margin-top:14px;">Footer Background</label>
+        <input type="file" name="footer_bg_image" accept="image/*">
+        {% if settings.footer_bg_image %}
+        <label class="checkbox-row"><input type="checkbox" name="clear_footer_bg_image" value="1"><span>Remove current footer background</span></label>
+        {% endif %}
 
         <h3 class="section-label">Colors</h3>
         <div style="display:flex; gap:14px; flex-wrap:wrap;">

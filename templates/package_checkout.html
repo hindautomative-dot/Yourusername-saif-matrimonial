@@ -36,8 +36,12 @@
         </div>
 
         <div class="qr-box">
+            {% if qr_image %}
+            <img src="{{ url_for('static', filename='branding/' + qr_image) }}" alt="UPI QR code">
+            {% else %}
             <img src="{{ url_for('static', filename='upi_qr.png') }}" alt="UPI QR code"
-                 onerror="this.style.display='none'; this.parentElement.innerText='Admin: add static/upi_qr.png';">
+                 onerror="this.style.display='none'; this.parentElement.innerText='Admin: upload a QR code in Website Settings.';">
+            {% endif %}
         </div>
         <div class="upi-id-box">UPI ID: {{ upi_id }}</div>
 

@@ -6,16 +6,17 @@
         <div>
             <h1>{{ hero_heading|safe }}</h1>
             <p class="lead">{{ hero_subheading }}</p>
+            <p class="hero-trust-line">✅ Verified Profiles &nbsp;·&nbsp; 🔒 Privacy Protected &nbsp;·&nbsp; 🤝 Serious Matrimonial Connections</p>
             <div class="hero-ctas">
                 <a href="#profiles" class="btn btn-primary">Browse Profiles</a>
-                <a href="{{ url_for('how_it_works') }}" class="btn btn-outline">How It Works</a>
+                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold">Register Yourself — ₹{{ registration_price }}</a>
             </div>
         </div>
         <div class="hero-panel">
             <h3>Unlock Profiles</h3>
             <p>No subscriptions. Pay only for what you're genuinely interested in.</p>
             <div class="hero-price">₹{{ unlock_price }}</div>
-            <p>for 1 profile — or ₹{{ package_price }} for {{ package_size }} profiles.</p>
+            <p>for 1 profile{% if package_offer_enabled %} — or ₹{{ package_price }} for {{ package_size }} profiles{% endif %}.</p>
         </div>
     </div>
 </section>
@@ -31,6 +32,64 @@
 {% endif %}
 
 <div class="trust-strip">{{ business_tagline }} — {{ business_location }}</div>
+
+<section class="container">
+    <div class="register-section">
+        <div class="register-section-inner">
+            <div>
+                <span class="register-badge-pill">Almost Free</span>
+                <h2>Register Yourself — Start Your Matrimonial Journey</h2>
+                <p>Why only search when you can be found too? Create your matrimonial profile for just ₹{{ registration_price }} and open the door to meaningful connections.</p>
+                <ul>
+                    <li>Your profile can become visible to suitable people browsing the site</li>
+                    <li>You can receive genuine interest and connection requests</li>
+                    <li>Your details are reviewed by our team before going live</li>
+                    <li>Privacy-first — your contact stays hidden until a request is approved</li>
+                </ul>
+                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold">Register Myself — ₹{{ registration_price }}</a>
+            </div>
+            <div class="register-price-card">
+                <div class="price">₹{{ registration_price }}</div>
+                <div class="price-note">one-time · almost free</div>
+                <a href="{{ url_for('register_yourself') }}" class="btn btn-outline-light btn-block">Get Started</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="container">
+    <h2 class="section-title">Simple, Transparent Pricing</h2>
+    <p class="section-sub">Pay only for the profile(s) you're genuinely interested in — no subscriptions, no hidden fees.</p>
+    <div class="pricing-grid">
+        <div class="pricing-card">
+            <div class="plabel">Single Unlock</div>
+            <div class="price">₹{{ unlock_price }} <small>/ profile</small></div>
+            <div class="pnote">Unlock exactly one profile you're interested in</div>
+            <ul>
+                <li>Unlock 1 selected profile</li>
+                <li>Manual payment verification</li>
+                <li>Privacy protected</li>
+                <li>No subscription</li>
+            </ul>
+            <a href="#profiles" class="btn btn-outline btn-block">Unlock 1 Profile</a>
+        </div>
+        {% if package_offer_enabled %}
+        <div class="pricing-card featured">
+            <div class="pricing-tag">Introductory Offer</div>
+            <div class="plabel">{{ package_size }}-Profile Package</div>
+            <div class="price">₹{{ package_price }} <small>/ {{ package_size }} profiles</small></div>
+            <div class="pnote">Save compared to individual unlocks</div>
+            <ul>
+                <li>{{ package_size }} profile unlocks in one payment</li>
+                <li>Manual payment verification</li>
+                <li>Privacy protected</li>
+                <li>No subscription</li>
+            </ul>
+            <a href="#profiles" class="btn btn-primary btn-block">Get {{ package_size }} Profiles</a>
+        </div>
+        {% endif %}
+    </div>
+</section>
 
 <section class="container">
     <h2 class="section-title">Why Families Trust Us</h2>
@@ -49,7 +108,7 @@
         <div class="trust-card">
             <div class="icon">🪙</div>
             <b>Simple ₹{{ unlock_price }} Unlock</b>
-            <span>Pay only for the one profile you're interested in — or ₹{{ package_price }} for {{ package_size }} profiles — no bulk membership fees.</span>
+            <span>Pay only for the one profile you're interested in{% if package_offer_enabled %} — or ₹{{ package_price }} for {{ package_size }} profiles{% endif %} — no bulk membership fees.</span>
         </div>
         <div class="trust-card">
             <div class="icon">🤝</div>

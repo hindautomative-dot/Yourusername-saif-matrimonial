@@ -307,8 +307,31 @@ def init_db():
             FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS self_registrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            age INTEGER,
+            gender TEXT,
+            city TEXT,
+            marital_status TEXT,
+            education TEXT,
+            profession TEXT,
+            bio TEXT,
+            photo_original_name TEXT,
+            photo_preview_name TEXT,
+            payment_proof_name TEXT,
+            status TEXT DEFAULT 'pending',
+            profile_id INTEGER,
+            requested_at TEXT NOT NULL,
+            decided_at TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_agents_phone ON agents(phone);
         CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON agent_activity_log(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_self_reg_status ON self_registrations(status);
+        CREATE INDEX IF NOT EXISTS idx_self_reg_phone ON self_registrations(phone);
 
         CREATE INDEX IF NOT EXISTS idx_profiles_code ON profiles(profile_code);
         CREATE INDEX IF NOT EXISTS idx_profiles_active ON profiles(is_active);
@@ -339,9 +362,11 @@ def init_db():
         "whatsapp_number": os.environ.get("WHATSAPP_NUMBER", os.environ.get("BUSINESS_PHONE", "7762023966")),
         "brand_email": os.environ.get("BUSINESS_EMAIL", ""),
         "brand_location": os.environ.get("BUSINESS_LOCATION", "Kolkata, India"),
-        "unlock_price": os.environ.get("UNLOCK_PRICE", "41"),
-        "package_price": os.environ.get("PACKAGE_PRICE", "99"),
-        "package_size": os.environ.get("PACKAGE_SIZE", "3"),
+        "unlock_price": os.environ.get("UNLOCK_PRICE", "49"),
+        "package_price": os.environ.get("PACKAGE_PRICE", "149"),
+        "package_size": os.environ.get("PACKAGE_SIZE", "4"),
+        "package_offer_enabled": os.environ.get("PACKAGE_OFFER_ENABLED", "1"),
+        "registration_price": os.environ.get("REGISTRATION_PRICE", "11"),
         "upi_id": os.environ.get("UPI_ID", "yourupi@bank"),
         "primary_color": os.environ.get("PRIMARY_COLOR", "#0b5a44"),
         "secondary_color": os.environ.get("SECONDARY_COLOR", "#073e2f"),
@@ -351,6 +376,11 @@ def init_db():
         "footer_text": "",
         "logo_image": "",
         "favicon_image": "",
+        "qr_image": "",
+        "nav_bg_image": "",
+        "hero_bg_image": "",
+        "section_bg_image": "",
+        "footer_bg_image": "",
     }
     for k, v in defaults.items():
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
@@ -401,9 +431,11 @@ def inject_globals():
         whatsapp_number=s.get("whatsapp_number", s.get("brand_phone", "")),
         business_email=s.get("brand_email", ""),
         business_location=s.get("brand_location", ""),
-        unlock_price=s.get("unlock_price", "41"),
-        package_price=s.get("package_price", "99"),
-        package_size=s.get("package_size", "3"),
+        unlock_price=s.get("unlock_price", "49"),
+        package_price=s.get("package_price", "149"),
+        package_size=s.get("package_size", "4"),
+        package_offer_enabled=s.get("package_offer_enabled", "1") == "1",
+        registration_price=s.get("registration_price", "11"),
         upi_id=s.get("upi_id", "yourupi@bank"),
         primary_color=s.get("primary_color", "#0b5a44"),
         secondary_color=s.get("secondary_color", "#073e2f"),
@@ -412,6 +444,12 @@ def inject_globals():
         hero_subheading=s.get("hero_subheading", ""),
         footer_text=s.get("footer_text", ""),
         logo_image=s.get("logo_image", ""),
+        qr_image=s.get("qr_image", ""),
+        nav_bg_image=s.get("nav_bg_image", ""),
+        hero_bg_image=s.get("hero_bg_image", ""),
+        section_bg_image=s.get("section_bg_image", ""),
+        footer_bg_image=s.get("footer_bg_image", ""),
+        top_banners=active_banners("top"),
         current_year=datetime.now().year,
     )
 
@@ -1037,6 +1075,90 @@ def package_checkout():
     return render_template("package_checkout.html", profiles=profiles, size=size)
 
 
+# ======================================================================
+# SELF REGISTRATION — "Register Yourself" for ₹{registration_price}.
+# A visitor submits their own basic details + a small payment proof.
+# This is NOT written straight into the public profiles table — it lands
+# in self_registrations as 'pending' and only becomes a real, browsable
+# profile once an admin reviews and approves it (mirrors the unlock_request
+# manual-verification pattern already used across the site).
+# ======================================================================
+@app.route("/register-yourself", methods=["GET", "POST"])
+def register_yourself():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()[:120]
+        phone = request.form.get("phone", "").strip()
+        age = request.form.get("age", "").strip()
+        gender = request.form.get("gender", "").strip()
+        city = request.form.get("city", "").strip()[:120]
+        marital_status = request.form.get("marital_status", "").strip()[:60]
+        education = request.form.get("education", "").strip()[:150]
+        profession = request.form.get("profession", "").strip()[:150]
+        bio = request.form.get("bio", "").strip()[:800]
+        consent = request.form.get("consent")
+
+        errors = []
+        if not name:
+            errors.append("Please enter your name.")
+        if not valid_indian_phone(phone):
+            errors.append("Please enter a valid 10-digit Indian mobile number.")
+        if not age.isdigit() or not (18 <= int(age) <= 90):
+            errors.append("Please enter a valid age (18-90).")
+        if gender not in ("Male", "Female"):
+            errors.append("Please select your gender.")
+        if not city:
+            errors.append("Please enter your city.")
+        if not consent:
+            errors.append("Please confirm you have completed the ₹{} payment.".format(get_setting("registration_price", "11")))
+
+        photo_original_name = photo_preview_name = None
+        photo_file = request.files.get("photo")
+        if photo_file and photo_file.filename:
+            try:
+                photo_original_name, photo_preview_name = save_profile_photo(photo_file)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        proof_file = request.files.get("payment_proof")
+        proof_name = None
+        if not proof_file or not proof_file.filename:
+            errors.append("Please upload your payment screenshot.")
+        else:
+            try:
+                proof_name = save_payment_proof(proof_file)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("register_yourself.html")
+
+        db = get_db()
+        request_code = new_request_code()
+        db.execute(
+            """
+            INSERT INTO self_registrations
+            (request_code, name, phone, age, gender, city, marital_status, education, profession, bio,
+             photo_original_name, photo_preview_name, payment_proof_name, status, requested_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (request_code, name, phone, int(age), gender, city, marital_status, education, profession, bio,
+             photo_original_name, photo_preview_name, proof_name, datetime.now().isoformat()),
+        )
+        db.commit()
+
+        notify_admin(
+            "New self-registration",
+            f"{name} ({phone}) registered themselves for ₹{get_setting('registration_price', '11')}. "
+            f"Request code: {request_code}. Review: {request.url_root.rstrip('/')}{url_for('admin_registrations')}",
+        )
+
+        return render_template("registration_submitted.html", request_code=request_code)
+
+    return render_template("register_yourself.html")
+
+
 @app.route("/profile/<profile_code>/full")
 def profile_full(profile_code):
     db = get_db()
@@ -1572,7 +1694,8 @@ def admin_logout():
 def admin_api_pending_count():
     db = get_db()
     count = db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='pending'").fetchone()["c"]
-    return {"pending": count}
+    reg_count = db.execute("SELECT COUNT(*) c FROM self_registrations WHERE status='pending'").fetchone()["c"]
+    return {"pending": count + reg_count, "payment_pending": count, "registration_pending": reg_count}
 
 
 @app.route("/admin")
@@ -1588,6 +1711,8 @@ def admin_dashboard():
         "rejected": db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='rejected'").fetchone()["c"],
         "agents_total": db.execute("SELECT COUNT(*) c FROM agents").fetchone()["c"],
         "agents_active": db.execute("SELECT COUNT(*) c FROM agents WHERE is_active=1").fetchone()["c"],
+        "reg_pending": db.execute("SELECT COUNT(*) c FROM self_registrations WHERE status='pending'").fetchone()["c"],
+        "reg_total": db.execute("SELECT COUNT(*) c FROM self_registrations").fetchone()["c"],
     }
     recent_pending = db.execute(
         """
@@ -1871,14 +1996,95 @@ def admin_decide_package(package_code, action):
 
 
 # ======================================================================
+# ADMIN — SELF REGISTRATIONS ("Register Yourself" ₹11 flow)
+# ======================================================================
+@app.route("/admin/registrations")
+@admin_required
+def admin_registrations():
+    db = get_db()
+    status_filter = request.args.get("status", "pending")
+    if status_filter != "all":
+        rows = db.execute(
+            "SELECT * FROM self_registrations WHERE status = ? ORDER BY requested_at DESC", (status_filter,)
+        ).fetchall()
+    else:
+        rows = db.execute("SELECT * FROM self_registrations ORDER BY requested_at DESC").fetchall()
+    return render_template("admin_registrations.html", rows=rows, status_filter=status_filter)
+
+
+@app.route("/admin/registrations/<int:reg_id>/proof")
+@admin_required
+def admin_registration_proof(reg_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM self_registrations WHERE id = ?", (reg_id,)).fetchone()
+    if not row or not row["payment_proof_name"]:
+        abort(404)
+    resp = send_from_directory(PRIVATE_PROOFS_DIR, row["payment_proof_name"])
+    resp.headers["Cache-Control"] = "no-store, private"
+    return resp
+
+
+@app.route("/admin/registrations/<int:reg_id>/<action>", methods=["POST"])
+@admin_required
+def admin_decide_registration(reg_id, action):
+    if action not in ("approve", "reject"):
+        abort(400)
+    db = get_db()
+    row = db.execute("SELECT * FROM self_registrations WHERE id = ?", (reg_id,)).fetchone()
+    if not row:
+        abort(404)
+
+    if action == "reject":
+        db.execute(
+            "UPDATE self_registrations SET status = 'rejected', decided_at = ? WHERE id = ?",
+            (datetime.now().isoformat(), reg_id),
+        )
+        db.commit()
+        log_admin_action("registration_reject", str(reg_id))
+        flash("Registration rejected.", "success")
+        return redirect(url_for("admin_registrations"))
+
+    # Approve: turn this self-registration into a real, browsable profile —
+    # reusing the exact same profiles table every admin-added profile uses.
+    profile_code = next_profile_code(db)
+    db.execute(
+        """
+        INSERT INTO profiles
+        (profile_code, name, age, gender, city, marital_status, education, profession,
+         bio, contact_number, contact_visible, admin_verified, phone_verified, photo_reviewed,
+         photo_original_name, photo_preview_name, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?, 1, ?)
+        """,
+        (profile_code, row["name"], row["age"], row["gender"], row["city"], row["marital_status"],
+         row["education"], row["profession"], row["bio"], row["phone"],
+         row["photo_original_name"], row["photo_preview_name"], datetime.now().isoformat()),
+    )
+    new_profile = db.execute("SELECT id FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
+    db.execute(
+        "UPDATE self_registrations SET status = 'approved', decided_at = ?, profile_id = ? WHERE id = ?",
+        (datetime.now().isoformat(), new_profile["id"], reg_id),
+    )
+    db.commit()
+    log_admin_action("registration_approve", f"{reg_id} -> {profile_code}")
+    flash(f"Registration approved — profile {profile_code} is now live. You can review/edit it any time.", "success")
+    return redirect(url_for("admin_registrations"))
+
+
+# ======================================================================
 # ADMIN — WEBSITE SETTINGS (branding)
 # ======================================================================
 SETTINGS_TEXT_FIELDS = [
     "brand_name", "brand_tagline", "brand_phone", "whatsapp_number", "brand_email",
-    "brand_location", "unlock_price", "package_price", "package_size", "upi_id",
+    "brand_location", "unlock_price", "package_price", "package_size", "package_offer_enabled",
+    "registration_price", "upi_id",
     "primary_color", "secondary_color", "accent_color", "hero_heading", "hero_subheading",
     "footer_text",
 ]
+
+# Background images the admin can upload from Appearance Settings without
+# touching any code/CSS. Each maps a settings key -> the CSS variable that
+# picks it up (see base.html, which turns these into --*-bg-image vars).
+APPEARANCE_IMAGE_FIELDS = ["nav_bg_image", "hero_bg_image", "section_bg_image", "footer_bg_image"]
 
 
 @app.route("/admin/settings", methods=["GET", "POST"])
@@ -1910,6 +2116,33 @@ def admin_settings():
                                "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (name,))
             except ImageValidationError as e:
                 flash(f"Favicon not saved: {e}", "error")
+
+        qr = request.files.get("qr_image")
+        if qr and qr.filename:
+            try:
+                name = save_generic_image(qr, BRANDING_DIR, max_dim=800)
+                if name:
+                    db.execute("INSERT INTO settings (key, value) VALUES ('qr_image', ?) "
+                               "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (name,))
+            except ImageValidationError as e:
+                flash(f"QR code not saved: {e}", "error")
+
+        # Appearance backgrounds — admin can set these without touching any
+        # code. Each is optional; leaving the field empty keeps the current
+        # image (or the CSS default gradient if none was ever set).
+        for field in APPEARANCE_IMAGE_FIELDS:
+            f = request.files.get(field)
+            if f and f.filename:
+                try:
+                    name = save_generic_image(f, BRANDING_DIR, max_dim=2000)
+                    if name:
+                        db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (field, name))
+                except ImageValidationError as e:
+                    flash(f"{field.replace('_', ' ').title()} not saved: {e}", "error")
+            if request.form.get(f"clear_{field}") == "1":
+                db.execute("INSERT INTO settings (key, value) VALUES (?, '') "
+                           "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (field,))
 
         db.commit()
         log_admin_action("update_settings")
