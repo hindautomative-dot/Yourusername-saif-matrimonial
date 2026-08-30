@@ -18,7 +18,8 @@
         <input type="text" name="brand_tagline" value="{{ settings.brand_tagline }}">
 
         <label>Logo</label>
-        <input type="file" name="logo" accept="image/*">
+        <input type="file" name="logo" accept="image/*" data-autoresize>
+        <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
         {% if settings.logo_image %}
         <div class="helptext">Current logo:</div>
         <img src="{{ url_for('static', filename='branding/' + settings.logo_image) }}" style="height:44px; margin-top:6px; border-radius:8px;">

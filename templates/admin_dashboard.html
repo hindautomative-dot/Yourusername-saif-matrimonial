@@ -13,12 +13,14 @@
         <div class="stat-card"><div class="num">{{ stats.pending }}</div><div class="label">Pending Requests</div></div>
         <div class="stat-card"><div class="num">{{ stats.unlocked }}</div><div class="label">Unlocked</div></div>
         <div class="stat-card"><div class="num">{{ stats.rejected }}</div><div class="label">Rejected</div></div>
+        <div class="stat-card"><div class="num">{{ stats.agents_active }}/{{ stats.agents_total }}</div><div class="label">Active Agents</div></div>
     </div>
 
     <div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:34px;">
         <a class="btn btn-primary" href="{{ url_for('admin_add_profile') }}">+ Add Profile</a>
         <a class="btn btn-outline" href="{{ url_for('admin_profiles') }}">Manage Profiles</a>
         <a class="btn btn-outline" href="{{ url_for('admin_requests') }}">Pending Requests</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_agents') }}">Agents</a>
         <a class="btn btn-outline" href="{{ url_for('admin_settings') }}">Website Settings</a>
         <a class="btn btn-outline" href="{{ url_for('admin_banners') }}">Banners</a>
         <a class="btn btn-outline" href="{{ url_for('admin_logout') }}">Logout</a>

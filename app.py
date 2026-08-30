@@ -37,12 +37,16 @@ for d in (PRIVATE_ORIGINALS_DIR, PRIVATE_PROOFS_DIR, PRIVATE_WATERMARK_CACHE_DIR
     os.makedirs(d, exist_ok=True)
 
 ALLOWED_IMAGE_EXT = {"png", "jpg", "jpeg", "webp"}
-MAX_IMAGE_BYTES = 6 * 1024 * 1024  # 6 MB per image
+MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15 MB per image (real phone camera photos can be large)
 
 app = Flask(__name__)
 
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-this-secret-key")
-app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+# Raised from 8MB: modern iPhone/Android camera photos routinely exceed that on
+# their own, so a full request (photo + form fields) was getting cut off mid-upload
+# before the app could even show a proper "file too large" message. 25MB covers a
+# couple of full-res photos plus form fields with real headroom.
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -66,9 +70,11 @@ ADMIN_PASSWORD_HASH = generate_password_hash(os.environ.get("ADMIN_PASSWORD", "c
 OTP_PROVIDER = os.environ.get("OTP_PROVIDER", "console").lower()
 
 
-def send_otp_sms(phone, code):
+def send_raw_sms(phone, message):
+    """Send an arbitrary text message via whichever OTP_PROVIDER is configured.
+    Shared by OTP delivery and admin alert notifications."""
     if OTP_PROVIDER == "console":
-        app.logger.warning(f"[DEV OTP] Phone {phone} -> OTP {code} (configure OTP_PROVIDER for real SMS)")
+        app.logger.warning(f"[DEV SMS] To {phone}: {message}")
         return True, "console"
     try:
         import requests
@@ -79,29 +85,90 @@ def send_otp_sms(phone, code):
             r = requests.post(
                 "https://www.fast2sms.com/dev/bulkV2",
                 headers={"authorization": api_key},
-                data={"route": "otp", "variables_values": code, "numbers": phone},
+                data={"route": "q", "message": message, "numbers": phone},
                 timeout=10,
             )
             return r.ok, r.text
         if OTP_PROVIDER == "msg91":
             api_key = os.environ.get("MSG91_API_KEY")
-            template_id = os.environ.get("MSG91_TEMPLATE_ID")
-            if not (api_key and template_id):
-                raise RuntimeError("MSG91_API_KEY / MSG91_TEMPLATE_ID not set")
+            if not api_key:
+                raise RuntimeError("MSG91_API_KEY not set")
             r = requests.post(
-                "https://control.msg91.com/api/v5/otp",
+                "https://control.msg91.com/api/v5/flow",
                 headers={"authkey": api_key},
-                params={"template_id": template_id, "mobile": f"91{phone}", "otp": code},
+                json={"mobiles": f"91{phone}", "message": message},
                 timeout=10,
             )
             return r.ok, r.text
-        app.logger.warning(f"[OTP] Unknown OTP_PROVIDER={OTP_PROVIDER}; falling back to console log.")
-        app.logger.warning(f"[DEV OTP] Phone {phone} -> OTP {code}")
+        app.logger.warning(f"[SMS] Unknown OTP_PROVIDER={OTP_PROVIDER}; falling back to console log.")
+        app.logger.warning(f"[DEV SMS] To {phone}: {message}")
         return True, "fallback-console"
     except Exception as e:
-        app.logger.error(f"[OTP] Delivery failed via {OTP_PROVIDER}: {e}")
-        app.logger.warning(f"[DEV OTP] Phone {phone} -> OTP {code}")
+        app.logger.error(f"[SMS] Delivery failed via {OTP_PROVIDER}: {e}")
+        app.logger.warning(f"[DEV SMS] To {phone}: {message}")
         return False, str(e)
+
+
+def send_otp_sms(phone, code):
+    return send_raw_sms(phone, f"Your OTP is {code}. It expires in {OTP_TTL_MINUTES} minutes. Do not share this with anyone.")
+
+
+# ----------------------------------------------------------------------
+# Admin alerts — fired the moment a customer submits payment proof, so
+# the admin doesn't have to keep refreshing the dashboard. Three
+# independent channels, each optional and controlled by env vars:
+#   1. SMS to ADMIN_NOTIFY_PHONE  (reuses the OTP_PROVIDER above)
+#   2. Email to ADMIN_NOTIFY_EMAIL (via SMTP_* vars)
+#   3. WhatsApp via a generic HTTP webhook (WHATSAPP_API_URL / WHATSAPP_API_TOKEN)
+# None of these require code changes to enable — they light up as soon
+# as the matching env vars are set. If nothing is configured, the
+# in-admin-panel live badge (see /admin/api/pending-count) still works
+# with zero setup as long as the admin keeps a tab open.
+# ----------------------------------------------------------------------
+def notify_admin(subject, message):
+    admin_phone = os.environ.get("ADMIN_NOTIFY_PHONE", "").strip()
+    if admin_phone:
+        try:
+            send_raw_sms(admin_phone, f"{subject}: {message}")
+        except Exception as e:
+            app.logger.error(f"[ADMIN-NOTIFY] SMS failed: {e}")
+
+    admin_email = os.environ.get("ADMIN_NOTIFY_EMAIL", "").strip()
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    if admin_email and smtp_host:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+            smtp_user = os.environ.get("SMTP_USER", "")
+            smtp_pass = os.environ.get("SMTP_PASS", "")
+            mail_from = os.environ.get("SMTP_FROM", smtp_user)
+            msg = MIMEText(message)
+            msg["Subject"] = subject
+            msg["From"] = mail_from
+            msg["To"] = admin_email
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.starttls()
+                if smtp_user:
+                    server.login(smtp_user, smtp_pass)
+                server.sendmail(mail_from, [admin_email], msg.as_string())
+        except Exception as e:
+            app.logger.error(f"[ADMIN-NOTIFY] Email failed: {e}")
+
+    wa_url = os.environ.get("WHATSAPP_API_URL", "").strip()
+    wa_token = os.environ.get("WHATSAPP_API_TOKEN", "").strip()
+    wa_to = os.environ.get("WHATSAPP_ADMIN_NUMBER", "").strip()
+    if wa_url and wa_token and wa_to:
+        try:
+            import requests
+            requests.post(
+                wa_url,
+                headers={"Authorization": f"Bearer {wa_token}"},
+                json={"to": wa_to, "type": "text", "text": {"body": f"{subject}: {message}"}},
+                timeout=10,
+            )
+        except Exception as e:
+            app.logger.error(f"[ADMIN-NOTIFY] WhatsApp failed: {e}")
 
 
 # ======================================================================
@@ -218,6 +285,30 @@ def init_db():
             ip TEXT,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS agents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT UNIQUE NOT NULL,
+            notes TEXT,
+            access_code_hash TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            last_login_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS agent_activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id INTEGER NOT NULL,
+            action TEXT,
+            detail TEXT,
+            ip TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agents_phone ON agents(phone);
+        CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON agent_activity_log(agent_id);
 
         CREATE INDEX IF NOT EXISTS idx_profiles_code ON profiles(profile_code);
         CREATE INDEX IF NOT EXISTS idx_profiles_active ON profiles(is_active);
@@ -802,6 +893,13 @@ def unlock(profile_code):
         )
         db.commit()
 
+        notify_admin(
+            "New payment request",
+            f"{user_name or 'A customer'} ({user_phone}) submitted payment proof for "
+            f"profile {profile['profile_code']} ({profile['name']}). Request code: {request_code}. "
+            f"Review: {request.url_root.rstrip('/')}{url_for('admin_requests')}",
+        )
+
         # NOTE: unlike v2, we deliberately do NOT auto-trust this session
         # with `verified_phone` here. A phone number typed into a form is
         # not proof of ownership. Real access to "My Requests" now
@@ -945,6 +1043,328 @@ def exit_verification():
 
 
 # ======================================================================
+# AGENT PORTAL
+#
+# Agents are NEVER self-registered from the public site — only an admin
+# can create one (Admin > Agents), which is when the identity/details
+# check happens and a unique access code is generated and shown once.
+# Logging in as that agent afterwards requires ALL of:
+#   1. The agent's registered phone number
+#   2. OTP verification of that number (reuses the same OTP infra as
+#      customer "My Requests")
+#   3. The access code the admin gave them at creation time
+# The access code itself is never stored in plaintext, never appears in
+# any template/JS/HTML, and is only ever compared server-side.
+# ======================================================================
+def agent_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("agent_id"):
+            return redirect(url_for("agent_login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def log_agent_action(agent_id, action, detail=""):
+    db = get_db()
+    db.execute(
+        "INSERT INTO agent_activity_log (agent_id, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)",
+        (agent_id, action, detail, _client_ip(), datetime.now().isoformat()),
+    )
+    db.commit()
+
+
+agent_otp_limiter = RateLimiter(max_attempts=5, window_seconds=600, lockout_seconds=600)
+agent_code_limiter = RateLimiter(max_attempts=6, window_seconds=600, lockout_seconds=900)
+
+
+@app.route("/agent/login", methods=["GET", "POST"])
+def agent_login():
+    if request.method == "POST":
+        phone = request.form.get("phone", "").strip()
+        if not valid_indian_phone(phone):
+            flash("Please enter a valid 10-digit mobile number.", "error")
+            return render_template("agent_login.html")
+
+        db = get_db()
+        agent = db.execute("SELECT * FROM agents WHERE phone = ? AND is_active = 1", (phone,)).fetchone()
+        if not agent:
+            # Deliberately vague — do not reveal whether the number is a
+            # registered agent or not.
+            flash("If this number is registered as an agent, an OTP has been sent.", "success")
+            return render_template("agent_login.html")
+
+        if agent_otp_limiter.is_locked(phone):
+            flash("Too many OTP requests. Please try again later.", "error")
+            return render_template("agent_login.html")
+
+        agent_otp_limiter.register_attempt(phone)
+        code = "".join(secrets.choice("0123456789") for _ in range(OTP_LENGTH))
+        db.execute("DELETE FROM otp_codes WHERE phone = ?", (phone,))
+        db.execute(
+            "INSERT INTO otp_codes (phone, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
+            (phone, generate_password_hash(code),
+             (datetime.now() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat(),
+             datetime.now().isoformat()),
+        )
+        db.commit()
+        send_otp_sms(phone, code)
+
+        session["agent_otp_phone"] = phone
+        if OTP_PROVIDER == "console":
+            flash(f"Dev mode: SMS provider not configured, so here's your OTP directly: {code}", "success")
+        else:
+            flash("An OTP has been sent to your registered mobile number.", "success")
+        return redirect(url_for("agent_verify"))
+
+    return render_template("agent_login.html")
+
+
+@app.route("/agent/verify", methods=["GET", "POST"])
+def agent_verify():
+    phone = session.get("agent_otp_phone")
+    if not phone:
+        return redirect(url_for("agent_login"))
+
+    if request.method == "POST":
+        entered_otp = request.form.get("otp", "").strip()
+        access_code = request.form.get("access_code", "").strip()
+
+        if agent_code_limiter.is_locked(phone):
+            flash("Too many incorrect attempts. Please start over.", "error")
+            session.pop("agent_otp_phone", None)
+            return redirect(url_for("agent_login"))
+
+        db = get_db()
+        otp_row = db.execute(
+            "SELECT * FROM otp_codes WHERE phone = ? AND consumed = 0 ORDER BY id DESC LIMIT 1", (phone,)
+        ).fetchone()
+        otp_valid = (
+            otp_row
+            and datetime.fromisoformat(otp_row["expires_at"]) >= datetime.now()
+            and check_password_hash(otp_row["code_hash"], entered_otp)
+        )
+
+        agent = db.execute("SELECT * FROM agents WHERE phone = ? AND is_active = 1", (phone,)).fetchone()
+        code_valid = agent and access_code and check_password_hash(agent["access_code_hash"], access_code)
+
+        if not (otp_valid and code_valid):
+            agent_code_limiter.register_attempt(phone)
+            flash("Incorrect OTP or access code.", "error")
+            return render_template("agent_verify.html", phone=phone)
+
+        db.execute("UPDATE otp_codes SET consumed = 1 WHERE id = ?", (otp_row["id"],))
+        db.execute("UPDATE agents SET last_login_at = ? WHERE id = ?", (datetime.now().isoformat(), agent["id"]))
+        db.commit()
+        agent_code_limiter.clear(phone)
+        session.pop("agent_otp_phone", None)
+        session.permanent = True
+        session["agent_id"] = agent["id"]
+        session["agent_name"] = agent["name"]
+        log_agent_action(agent["id"], "login", f"from {_client_ip()}")
+        flash(f"Welcome, {agent['name']}.", "success")
+        return redirect(url_for("agent_dashboard"))
+
+    return render_template("agent_verify.html", phone=phone)
+
+
+@app.route("/agent/logout")
+def agent_logout():
+    if session.get("agent_id"):
+        log_agent_action(session["agent_id"], "logout")
+    session.pop("agent_id", None)
+    session.pop("agent_name", None)
+    return redirect(url_for("agent_login"))
+
+
+AGENT_PAGE_SIZE = 15
+
+
+@app.route("/agent/dashboard")
+@agent_required
+def agent_dashboard():
+    db = get_db()
+    filters = {
+        "gender": request.args.get("gender", "").strip(),
+        "min_age": request.args.get("min_age", "").strip(),
+        "max_age": request.args.get("max_age", "").strip(),
+        "city": request.args.get("city", "").strip(),
+        "state": request.args.get("state", "").strip(),
+        "marital_status": request.args.get("marital_status", "").strip(),
+        "education": request.args.get("education", "").strip(),
+        "profession": request.args.get("profession", "").strip(),
+        "community": request.args.get("community", "").strip(),
+        "sect": request.args.get("sect", "").strip(),
+        "mother_tongue": request.args.get("mother_tongue", "").strip(),
+        "verified_only": request.args.get("verified_only", "").strip(),
+    }
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+
+    where = ["is_active = 1"]
+    params = []
+    if filters["gender"] in ("Male", "Female"):
+        where.append("gender = ?")
+        params.append(filters["gender"])
+    if filters["min_age"].isdigit():
+        where.append("age >= ?")
+        params.append(int(filters["min_age"]))
+    if filters["max_age"].isdigit():
+        where.append("age <= ?")
+        params.append(int(filters["max_age"]))
+    for field in ("city", "state", "education", "profession", "work_location"):
+        if filters.get(field):
+            where.append(f"{field} LIKE ?")
+            params.append(f"%{filters[field]}%")
+    for field in ("marital_status", "community", "sect", "mother_tongue"):
+        if filters.get(field):
+            where.append(f"{field} = ?")
+            params.append(filters[field])
+    if filters["verified_only"] == "1":
+        where.append("admin_verified = 1")
+
+    where_sql = " AND ".join(where)
+    total = db.execute(f"SELECT COUNT(*) c FROM profiles WHERE {where_sql}", params).fetchone()["c"]
+    total_pages = max(1, math.ceil(total / AGENT_PAGE_SIZE))
+    page = min(page, total_pages)
+    offset = (page - 1) * AGENT_PAGE_SIZE
+
+    profiles = db.execute(
+        f"SELECT * FROM profiles WHERE {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        params + [AGENT_PAGE_SIZE, offset],
+    ).fetchall()
+
+    def distinct(col):
+        return [r[0] for r in db.execute(
+            f"SELECT DISTINCT {col} FROM profiles WHERE is_active=1 AND {col} IS NOT NULL AND {col} != '' ORDER BY {col}"
+        ).fetchall()]
+
+    filter_options = {
+        "cities": distinct("city"), "states": distinct("state"),
+        "marital_statuses": distinct("marital_status"), "communities": distinct("community"),
+        "sects": distinct("sect"), "mother_tongues": distinct("mother_tongue"),
+    }
+    any_filter_active = any(v for k, v in filters.items())
+    active_filters = {k: v for k, v in filters.items() if v}
+
+    return render_template(
+        "agent_dashboard.html", profiles=profiles, filters=filters, filter_options=filter_options,
+        page=page, total_pages=total_pages, total=total, any_filter_active=any_filter_active,
+        active_filters=active_filters,
+    )
+
+
+@app.route("/agent/profile/<profile_code>")
+@agent_required
+def agent_profile_view(profile_code):
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
+    if not profile:
+        abort(404)
+    log_agent_action(session["agent_id"], "view_profile", profile_code)
+    return render_template("agent_profile_view.html", profile=profile)
+
+
+@app.route("/agent/my-activity")
+@agent_required
+def agent_my_activity():
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM agent_activity_log WHERE agent_id = ? ORDER BY id DESC LIMIT 100",
+        (session["agent_id"],),
+    ).fetchall()
+    return render_template("agent_activity.html", rows=rows)
+
+
+# ======================================================================
+# ADMIN — AGENT MANAGEMENT
+# ======================================================================
+@app.route("/admin/agents")
+@admin_required
+def admin_agents():
+    db = get_db()
+    agents = db.execute("SELECT * FROM agents ORDER BY created_at DESC").fetchall()
+    return render_template("admin_agents.html", agents=agents)
+
+
+@app.route("/admin/agents/add", methods=["GET", "POST"])
+@admin_required
+def admin_add_agent():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()[:120]
+        phone = request.form.get("phone", "").strip()
+        notes = request.form.get("notes", "").strip()[:500]
+
+        errors = []
+        if not name:
+            errors.append("Agent name is required.")
+        if not valid_indian_phone(phone):
+            errors.append("Please enter a valid 10-digit mobile number.")
+
+        db = get_db()
+        if not errors and db.execute("SELECT 1 FROM agents WHERE phone = ?", (phone,)).fetchone():
+            errors.append("An agent with this phone number already exists.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("admin_agent_form.html", form={"name": name, "phone": phone, "notes": notes})
+
+        access_code = "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
+        db.execute(
+            "INSERT INTO agents (name, phone, notes, access_code_hash, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+            (name, phone, notes, generate_password_hash(access_code), datetime.now().isoformat()),
+        )
+        db.commit()
+        log_admin_action("add_agent", phone)
+        flash("Agent created.", "success")
+        return render_template("admin_agent_created.html", name=name, phone=phone, access_code=access_code)
+
+    return render_template("admin_agent_form.html", form=None)
+
+
+@app.route("/admin/agents/<int:agent_id>/toggle", methods=["POST"])
+@admin_required
+def admin_toggle_agent(agent_id):
+    db = get_db()
+    db.execute("UPDATE agents SET is_active = 1 - is_active WHERE id = ?", (agent_id,))
+    db.commit()
+    log_admin_action("toggle_agent", str(agent_id))
+    flash("Agent status updated.", "success")
+    return redirect(url_for("admin_agents"))
+
+
+@app.route("/admin/agents/<int:agent_id>/reset-code", methods=["POST"])
+@admin_required
+def admin_reset_agent_code(agent_id):
+    db = get_db()
+    agent = db.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
+    if not agent:
+        abort(404)
+    access_code = "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
+    db.execute("UPDATE agents SET access_code_hash = ? WHERE id = ?", (generate_password_hash(access_code), agent_id))
+    db.commit()
+    log_admin_action("reset_agent_code", agent["phone"])
+    flash("Access code reset.", "success")
+    return render_template("admin_agent_created.html", name=agent["name"], phone=agent["phone"], access_code=access_code)
+
+
+@app.route("/admin/agents/<int:agent_id>/activity")
+@admin_required
+def admin_agent_activity(agent_id):
+    db = get_db()
+    agent = db.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
+    if not agent:
+        abort(404)
+    rows = db.execute(
+        "SELECT * FROM agent_activity_log WHERE agent_id = ? ORDER BY id DESC LIMIT 200", (agent_id,)
+    ).fetchall()
+    return render_template("admin_agent_activity.html", agent=agent, rows=rows)
+
+
+# ======================================================================
 # SEO — robots.txt / sitemap.xml
 # ======================================================================
 @app.route("/robots.txt")
@@ -952,6 +1372,7 @@ def robots_txt():
     lines = [
         "User-agent: *",
         "Disallow: /admin",
+        "Disallow: /agent",
         "Disallow: /my-requests",
         "Disallow: /verify-access",
         "Disallow: /profile/*/unlock",
@@ -1018,6 +1439,14 @@ def admin_logout():
 # ======================================================================
 # ADMIN — DASHBOARD
 # ======================================================================
+@app.route("/admin/api/pending-count")
+@admin_required
+def admin_api_pending_count():
+    db = get_db()
+    count = db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='pending'").fetchone()["c"]
+    return {"pending": count}
+
+
 @app.route("/admin")
 @admin_required
 def admin_dashboard():
@@ -1029,6 +1458,8 @@ def admin_dashboard():
         "pending": db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='pending'").fetchone()["c"],
         "unlocked": db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='unlocked'").fetchone()["c"],
         "rejected": db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='rejected'").fetchone()["c"],
+        "agents_total": db.execute("SELECT COUNT(*) c FROM agents").fetchone()["c"],
+        "agents_active": db.execute("SELECT COUNT(*) c FROM agents WHERE is_active=1").fetchone()["c"],
     }
     recent_pending = db.execute(
         """

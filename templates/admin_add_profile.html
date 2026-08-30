@@ -90,7 +90,8 @@
 
         <h3 class="section-label">Photo</h3>
         <label>Photo</label>
-        <input type="file" name="photo" accept="image/*">
+        <input type="file" name="photo" accept="image/*" data-autoresize>
+        <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
         <div class="helptext">JPG, PNG or WEBP, up to 6 MB. A blurred preview is generated automatically; the original stays private and is watermarked per-viewer when unlocked.</div>
 
         <div style="margin-top:22px; display:flex; gap:10px;">

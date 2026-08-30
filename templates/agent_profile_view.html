@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.profile_code }} — Agent View{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <a class="btn btn-outline btn-sm" href="{{ url_for('agent_dashboard') }}" style="margin-bottom:16px;">‹ Back to Search</a>
+
+    <div class="card">
+        <div class="profile-code-row">
+            <h2 class="serif" style="margin:0;">{{ profile.profile_code }} — {{ profile.name }}</h2>
+            {% if profile.admin_verified %}<span class="badge badge-verified">Admin Reviewed</span>{% endif %}
+        </div>
+
+        <p class="muted" style="font-size:13.5px;">
+            Note: photos remain locked for everyone (including agents) until a customer completes payment
+            through the normal unlock flow. Use this page to confirm a profile's details before pointing a
+            customer to it.
+        </p>
+
+        <table style="width:100%; margin-top:16px;">
+            <tr><td class="muted">Age / Gender</td><td>{{ profile.age }} / {{ profile.gender }}</td></tr>
+            <tr><td class="muted">City / State</td><td>{{ profile.city }}{{ ', ' + profile.state if profile.state }}</td></tr>
+            <tr><td class="muted">Marital Status</td><td>{{ profile.marital_status or '—' }}</td></tr>
+            <tr><td class="muted">Education</td><td>{{ profile.education or '—' }}</td></tr>
+            <tr><td class="muted">Profession</td><td>{{ profile.profession or '—' }}</td></tr>
+            <tr><td class="muted">Income</td><td>{{ profile.income or '—' }}</td></tr>
+            <tr><td class="muted">Community / Sect</td><td>{{ profile.community or '—' }} / {{ profile.sect or '—' }}</td></tr>
+            <tr><td class="muted">Mother Tongue</td><td>{{ profile.mother_tongue or '—' }}</td></tr>
+            <tr><td class="muted">Height</td><td>{{ profile.height or '—' }}</td></tr>
+            <tr><td class="muted">Work Location</td><td>{{ profile.work_location or '—' }}</td></tr>
+            <tr><td class="muted">Family Details</td><td>{{ profile.family_details or '—' }}</td></tr>
+            <tr><td class="muted">Bio</td><td>{{ profile.bio or '—' }}</td></tr>
+            {% if profile.contact_visible %}
+            <tr><td class="muted">Contact Number</td><td>{{ profile.contact_number or '—' }}</td></tr>
+            {% endif %}
+        </table>
+
+        <a class="btn btn-primary btn-block" href="{{ url_for('profile_preview', profile_code=profile.profile_code) }}"
+           target="_blank" rel="noopener" style="margin-top:20px;">Open Public Page (to share with customer)</a>
+    </div>
+</section>
+
+{% endblock %}

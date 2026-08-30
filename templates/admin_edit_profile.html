@@ -91,7 +91,8 @@
 
         <h3 class="section-label">Photo</h3>
         <label>Replace Photo (optional)</label>
-        <input type="file" name="photo" accept="image/*">
+        <input type="file" name="photo" accept="image/*" data-autoresize>
+        <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
         <div class="helptext">Leave empty to keep the current photo.</div>
 
         <div style="margin-top:22px; display:flex; gap:10px;">

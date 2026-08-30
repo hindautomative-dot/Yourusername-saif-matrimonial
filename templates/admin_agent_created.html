@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Agent Access Code{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card">
+        <h2 class="serif center" style="color:var(--emerald-dark); margin-top:0;">Access Code Generated</h2>
+        <p class="center">for <b>{{ name }}</b> ({{ phone }})</p>
+
+        <div style="background:#f4efe3; border:1px dashed var(--gold); border-radius:10px; padding:20px; text-align:center; margin:20px 0;">
+            <div class="muted" style="font-size:12.5px; margin-bottom:6px;">ACCESS CODE — share this with the agent now</div>
+            <div style="font-size:26px; font-weight:700; letter-spacing:4px; color:var(--emerald-dark);">{{ access_code }}</div>
+        </div>
+
+        <p class="muted" style="font-size:13px;">
+            ⚠️ This code is shown only once and is not stored anywhere in readable form — write it down or
+            share it with the agent right now. To log in, the agent needs this code <b>plus</b> their phone
+            number <b>plus</b> an OTP sent to that number. If they lose the code, use "Reset Code" from the
+            Agents list to generate a new one.
+        </p>
+
+        <a class="btn btn-primary btn-block" href="{{ url_for('admin_agents') }}" style="margin-top:16px;">Back to Agents</a>
+    </div>
+</section>
+
+{% endblock %}

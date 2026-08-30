@@ -34,7 +34,8 @@
             <div class="helptext">This number becomes how you check status later — you'll verify it with an OTP.</div>
 
             <label for="payment_proof">Payment Screenshot *</label>
-            <input type="file" id="payment_proof" name="payment_proof" accept="image/*" required>
+            <input type="file" id="payment_proof" name="payment_proof" accept="image/*" required data-autoresize>
+            <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
 
             <label for="message">Message (optional)</label>
             <textarea id="message" name="message" rows="3" placeholder="Anything you'd like us to know"></textarea>

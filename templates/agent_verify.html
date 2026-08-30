@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Verify Agent Access{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card">
+        <h2 class="serif center" style="color:var(--emerald-dark); margin-top:0;">Verify Access</h2>
+        <p class="muted center" style="font-size:14px;">
+            Enter the OTP sent to <b>{{ phone }}</b> along with your access code.
+        </p>
+
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <label for="otp">OTP</label>
+            <input type="text" id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                   placeholder="6-digit code" required autofocus style="letter-spacing:6px; text-align:center; font-size:20px;">
+
+            <label for="access_code" style="margin-top:14px;">Access Code</label>
+            <input type="text" id="access_code" name="access_code" placeholder="Code given to you by the admin"
+                   required style="letter-spacing:2px; text-align:center; text-transform:uppercase;">
+
+            <button class="btn btn-primary btn-block" type="submit" style="margin-top:20px;">Verify &amp; Continue</button>
+        </form>
+
+        <form method="POST" action="{{ url_for('agent_login') }}" style="margin-top:10px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="phone" value="{{ phone }}">
+            <button class="btn btn-outline btn-block" type="submit">Resend OTP / Change Number</button>
+        </form>
+    </div>
+</section>
+
+{% endblock %}

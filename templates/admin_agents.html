@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Agents{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <h1 class="section-title" style="margin-bottom:0;">Agents</h1>
+        <a class="btn btn-primary" href="{{ url_for('admin_add_agent') }}">+ Add Agent</a>
+    </div>
+    <p class="section-sub">Agents log in at <code>/agent/login</code> using their phone + OTP + the access code you give them. Public visitors cannot reach the dashboard without all three.</p>
+
+    {% if agents %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Name</th><th>Phone</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>
+            {% for a in agents %}
+            <tr>
+                <td>{{ a.name }}{% if a.notes %}<br><span class="muted" style="font-size:12px;">{{ a.notes }}</span>{% endif %}</td>
+                <td>{{ a.phone }}</td>
+                <td>{% if a.is_active %}<span class="badge badge-unlocked">Active</span>{% else %}<span class="badge badge-rejected">Disabled</span>{% endif %}</td>
+                <td>{{ a.last_login_at[:16].replace('T',' ') if a.last_login_at else 'Never' }}</td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_agent_activity', agent_id=a.id) }}">Activity</a>
+                    <form method="POST" action="{{ url_for('admin_reset_agent_code', agent_id=a.id) }}"
+                          onsubmit="return confirm('Reset this agent\'s access code? Their old code will stop working immediately.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-outline" type="submit">Reset Code</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_toggle_agent', agent_id=a.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm {{ 'btn-danger' if a.is_active else 'btn-primary' }}" type="submit">
+                            {{ 'Disable' if a.is_active else 'Enable' }}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">🧑‍💼</div>
+        <p>No agents yet.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

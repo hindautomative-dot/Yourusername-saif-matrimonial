@@ -23,7 +23,8 @@
         <input type="text" name="link_url" placeholder="https://wa.me/91XXXXXXXXXX">
 
         <label>Banner Image *</label>
-        <input type="file" name="image" accept="image/*" required>
+        <input type="file" name="image" accept="image/*" required data-autoresize>
+        <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
         <div class="helptext">Recommended: wide landscape image, up to 6 MB. It will be shown as-is (no cropping) inside a rounded card.</div>
 
         <div style="display:flex; gap:14px; margin-top:14px;">

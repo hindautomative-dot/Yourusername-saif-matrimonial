@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Agent Dashboard{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <h1 class="section-title" style="margin-bottom:0;">Agent Dashboard</h1>
+        <div style="display:flex; gap:10px;">
+            <a class="btn btn-outline btn-sm" href="{{ url_for('agent_my_activity') }}">My Activity</a>
+            <a class="btn btn-outline btn-sm" href="{{ url_for('agent_logout') }}">Logout</a>
+        </div>
+    </div>
+    <p class="section-sub">Signed in as <b>{{ session.get('agent_name') }}</b>. Search and filter all active profiles below.</p>
+
+    <form method="GET" action="{{ url_for('agent_dashboard') }}" class="filter-bar">
+        <div class="filter-row">
+            <select name="gender">
+                <option value="">Any Gender</option>
+                <option value="Male" {{ 'selected' if filters.gender=='Male' }}>Male</option>
+                <option value="Female" {{ 'selected' if filters.gender=='Female' }}>Female</option>
+            </select>
+            <input type="number" name="min_age" placeholder="Min Age" min="18" max="90" value="{{ filters.min_age }}">
+            <input type="number" name="max_age" placeholder="Max Age" min="18" max="90" value="{{ filters.max_age }}">
+            <select name="city">
+                <option value="">Any City</option>
+                {% for c in filter_options.cities %}
+                <option value="{{ c }}" {{ 'selected' if filters.city==c }}>{{ c }}</option>
+                {% endfor %}
+            </select>
+            <select name="state">
+                <option value="">Any State</option>
+                {% for s in filter_options.states %}
+                <option value="{{ s }}" {{ 'selected' if filters.state==s }}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-row">
+            <select name="marital_status">
+                <option value="">Any Marital Status</option>
+                {% for m in filter_options.marital_statuses %}
+                <option value="{{ m }}" {{ 'selected' if filters.marital_status==m }}>{{ m }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="education" placeholder="Education" value="{{ filters.education }}">
+            <input type="text" name="profession" placeholder="Profession" value="{{ filters.profession }}">
+            <select name="community">
+                <option value="">Any Community</option>
+                {% for c in filter_options.communities %}
+                <option value="{{ c }}" {{ 'selected' if filters.community==c }}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-row">
+            <select name="sect">
+                <option value="">Any Sect</option>
+                {% for s in filter_options.sects %}
+                <option value="{{ s }}" {{ 'selected' if filters.sect==s }}>{{ s }}</option>
+                {% endfor %}
+            </select>
+            <select name="mother_tongue">
+                <option value="">Any Mother Tongue</option>
+                {% for m in filter_options.mother_tongues %}
+                <option value="{{ m }}" {{ 'selected' if filters.mother_tongue==m }}>{{ m }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="work_location" placeholder="Work Location" value="{{ filters.work_location }}">
+            <label class="checkbox-row" style="align-self:center;">
+                <input type="checkbox" name="verified_only" value="1" {{ 'checked' if filters.verified_only=='1' }}>
+                Admin-verified only
+            </label>
+        </div>
+        <div class="filter-row filter-actions">
+            <button class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+            {% if any_filter_active %}
+            <a class="btn btn-outline btn-sm" href="{{ url_for('agent_dashboard') }}">Clear Filters</a>
+            {% endif %}
+            <span class="filter-count">{{ total }} profile{{ 's' if total != 1 }} found</span>
+        </div>
+    </form>
+
+    {% if profiles %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Code</th><th>Name / Age / Gender</th><th>City / State</th><th>Marital Status</th><th>Profession</th><th>Status</th><th></th></tr>
+            {% for p in profiles %}
+            <tr>
+                <td>{{ p.profile_code }}</td>
+                <td>{{ p.name }} · {{ p.age }} · {{ p.gender }}</td>
+                <td>{{ p.city }}{{ ', ' + p.state if p.state }}</td>
+                <td>{{ p.marital_status or '—' }}</td>
+                <td>{{ p.profession or '—' }}</td>
+                <td>{% if p.admin_verified %}<span class="badge badge-verified">Verified</span>{% else %}<span class="badge badge-pending">Unverified</span>{% endif %}</td>
+                <td><a class="btn btn-sm btn-outline" href="{{ url_for('agent_profile_view', profile_code=p.profile_code) }}">View</a></td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% set base_args = active_filters %}
+        {% if page > 1 %}
+        <a class="page-link" href="{{ url_for('agent_dashboard', page=page-1, **base_args) }}">‹ Prev</a>
+        {% endif %}
+        <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="page-link" href="{{ url_for('agent_dashboard', page=page+1, **base_args) }}">Next ›</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">🔎</div>
+        <p>No profiles match these filters.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

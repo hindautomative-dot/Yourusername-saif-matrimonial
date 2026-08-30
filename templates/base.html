@@ -48,7 +48,7 @@
             <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
             <a href="{{ url_for('index') }}#contact">Contact</a>
             {% if session.get('is_admin') %}
-                <a href="{{ url_for('admin_dashboard') }}" class="nav-cta">Admin</a>
+                <a href="{{ url_for('admin_dashboard') }}" class="nav-cta">Admin <span id="adminPendingBadge" class="badge badge-pending" style="display:none; margin-left:4px;"></span></a>
             {% endif %}
         </nav>
 
@@ -110,5 +110,8 @@
 <a class="whatsapp-fab" href="https://wa.me/91{{ whatsapp_number }}" target="_blank" rel="noopener" aria-label="WhatsApp support">💬</a>
 
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% if session.get('is_admin') %}
+<script src="{{ url_for('static', filename='js/admin-notify.js') }}"></script>
+{% endif %}
 </body>
 </html>

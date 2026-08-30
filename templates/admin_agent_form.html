@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Add Agent{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <h1 class="section-title">Add New Agent</h1>
+
+    <form method="POST" class="card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label>Agent Name *</label>
+        <input type="text" name="name" value="{{ form.name if form else '' }}" required>
+
+        <label>Mobile Number * (this is what they'll log in with)</label>
+        <input type="tel" name="phone" pattern="[6-9][0-9]{9}" value="{{ form.phone if form else '' }}" required>
+
+        <label>Notes (optional — area, role, anything to remember them by)</label>
+        <textarea name="notes" rows="3">{{ form.notes if form else '' }}</textarea>
+
+        <button class="btn btn-primary btn-block" type="submit" style="margin-top:20px;">Create Agent</button>
+    </form>
+</section>
+
+{% endblock %}
