@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Package Checkout — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card">
+        <h2 class="serif center" style="color:var(--emerald-dark); margin-top:0;">{{ size }}-Profile Package — ₹{{ package_price }}</h2>
+
+        {% if profiles|length < size %}
+        <p class="center" style="font-size:14px;">
+            You've selected {{ profiles|length }} of {{ size }} profiles.
+            <a href="{{ url_for('index') }}#profiles">Browse more profiles</a> to add {{ size - profiles|length }} more.
+        </p>
+        {% else %}
+
+        <p class="center muted" style="font-size:13.5px;">Your selected profiles:</p>
+        <div class="table-wrap" style="margin-bottom:18px;">
+            <table>
+                <tr><th>Code</th><th>Name / Age</th><th>City</th><th></th></tr>
+                {% for p in profiles %}
+                <tr>
+                    <td>{{ p.profile_code }}</td>
+                    <td>{{ p.name }} · {{ p.age }}</td>
+                    <td>{{ p.city }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('package_toggle', profile_code=p.profile_code) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ url_for('package_checkout') }}">
+                            <button class="btn btn-sm btn-outline" type="submit">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="qr-box">
+            <img src="{{ url_for('static', filename='upi_qr.png') }}" alt="UPI QR code"
+                 onerror="this.style.display='none'; this.parentElement.innerText='Admin: add static/upi_qr.png';">
+        </div>
+        <div class="upi-id-box">UPI ID: {{ upi_id }}</div>
+
+        <ol class="steps-list">
+            <li>Scan the QR code above.</li>
+            <li>Pay ₹{{ package_price }} (covers all {{ size }} profiles above).</li>
+            <li>Take a screenshot of the successful payment.</li>
+            <li>Upload the screenshot below.</li>
+            <li>Enter your name and mobile number.</li>
+            <li>Submit your request.</li>
+        </ol>
+
+        <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <label for="user_name">Your Name</label>
+            <input type="text" id="user_name" name="user_name" placeholder="Your full name">
+
+            <label for="user_phone">Your Mobile Number *</label>
+            <input type="tel" id="user_phone" name="user_phone" placeholder="10-digit mobile number" pattern="[6-9][0-9]{9}" required>
+            <div class="helptext">This number becomes how you check status later — you'll verify it with an OTP.</div>
+
+            <label for="payment_proof">Payment Screenshot *</label>
+            <input type="file" id="payment_proof" name="payment_proof" accept="image/*" required data-autoresize>
+            <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
+
+            <label for="message">Message (optional)</label>
+            <textarea id="message" name="message" rows="3" placeholder="Anything you'd like us to know"></textarea>
+
+            <label class="checkbox-row">
+                <input type="checkbox" name="consent" required>
+                <span>I have completed the payment and understand that profile access is subject to manual verification.</span>
+            </label>
+
+            <button class="btn btn-gold btn-block" type="submit" style="margin-top:22px;">Submit Package Request</button>
+        </form>
+        {% endif %}
+    </div>
+</section>
+
+{% endblock %}

@@ -13,11 +13,50 @@
         <a href="{{ url_for('admin_requests', status='all') }}" class="{{ 'active' if status_filter=='all' }}">All</a>
     </div>
 
-    {% if rows %}
+    {% if packages %}
+    <h2 class="section-title" style="font-size:18px; margin-top:24px;">Package Requests</h2>
+    {% for package_code, rows in packages.items() %}
+    <div class="card" style="margin-bottom:16px;">
+        <div class="profile-code-row">
+            <b>Package {{ package_code }}</b> — {{ rows|length }} profiles —
+            {% set r0 = rows[0] %}
+            {% if r0.status == 'pending' %}<span class="badge badge-pending">Pending</span>
+            {% elif r0.status == 'unlocked' %}<span class="badge badge-unlocked">Unlocked</span>
+            {% else %}<span class="badge badge-rejected">Rejected</span>{% endif %}
+        </div>
+        <p class="muted" style="font-size:13.5px;">{{ r0.user_name or '—' }} · {{ r0.user_phone }} · {{ r0.requested_at[:16].replace('T',' ') }}</p>
+        <ul style="font-size:13.5px;">
+            {% for r in rows %}
+            <li>{{ r.profile_code }} — {{ r.profile_name }}</li>
+            {% endfor %}
+        </ul>
+        {% if r0.payment_proof_name %}
+        <a class="btn btn-sm btn-outline" href="{{ url_for('admin_payment_proof', request_id=r0.id) }}" target="_blank" rel="noopener">View Proof</a>
+        {% endif %}
+        {% if r0.status == 'pending' %}
+        <div style="display:flex; gap:6px; margin-top:10px;">
+            <form method="POST" action="{{ url_for('admin_decide_package', package_code=package_code, action='unlock') }}"
+                  onsubmit="return confirm('Confirm payment and unlock all {{ rows|length }} profiles in this package?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-primary" type="submit">Confirm &amp; Unlock All</button>
+            </form>
+            <form method="POST" action="{{ url_for('admin_decide_package', package_code=package_code, action='reject') }}"
+                  onsubmit="return confirm('Reject this whole package?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-danger" type="submit">Reject Package</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <h2 class="section-title" style="font-size:18px; margin-top:24px;">Single Profile Requests</h2>
+    {% if singles %}
     <div class="table-wrap">
         <table>
             <tr><th>Profile</th><th>Requested By</th><th>Phone</th><th>When</th><th>Proof</th><th>Status</th><th>Actions</th></tr>
-            {% for r in rows %}
+            {% for r in singles %}
             <tr>
                 <td>{{ r.profile_code }} — {{ r.profile_name }}</td>
                 <td>{{ r.user_name or '—' }}</td>
@@ -54,7 +93,7 @@
     {% else %}
     <div class="empty-state">
         <div class="icon">✅</div>
-        <p>No requests here.</p>
+        <p>No single-profile requests here.</p>
     </div>
     {% endif %}
 </section>

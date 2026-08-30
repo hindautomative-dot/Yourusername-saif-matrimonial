@@ -330,6 +330,8 @@ def init_db():
     ]:
         _ensure_column(db, "profiles", col, coltype)
 
+    _ensure_column(db, "unlock_requests", "package_code", "TEXT")
+
     defaults = {
         "brand_name": os.environ.get("BUSINESS_NAME", "Saif Matrimonial Services"),
         "brand_tagline": os.environ.get("BUSINESS_TAGLINE", "Trusted Connections, Blessed Beginnings"),
@@ -337,7 +339,9 @@ def init_db():
         "whatsapp_number": os.environ.get("WHATSAPP_NUMBER", os.environ.get("BUSINESS_PHONE", "7762023966")),
         "brand_email": os.environ.get("BUSINESS_EMAIL", ""),
         "brand_location": os.environ.get("BUSINESS_LOCATION", "Kolkata, India"),
-        "unlock_price": os.environ.get("UNLOCK_PRICE", "11"),
+        "unlock_price": os.environ.get("UNLOCK_PRICE", "41"),
+        "package_price": os.environ.get("PACKAGE_PRICE", "99"),
+        "package_size": os.environ.get("PACKAGE_SIZE", "3"),
         "upi_id": os.environ.get("UPI_ID", "yourupi@bank"),
         "primary_color": os.environ.get("PRIMARY_COLOR", "#0b5a44"),
         "secondary_color": os.environ.get("SECONDARY_COLOR", "#073e2f"),
@@ -397,7 +401,9 @@ def inject_globals():
         whatsapp_number=s.get("whatsapp_number", s.get("brand_phone", "")),
         business_email=s.get("brand_email", ""),
         business_location=s.get("brand_location", ""),
-        unlock_price=s.get("unlock_price", "11"),
+        unlock_price=s.get("unlock_price", "41"),
+        package_price=s.get("package_price", "99"),
+        package_size=s.get("package_size", "3"),
         upi_id=s.get("upi_id", "yourupi@bank"),
         primary_color=s.get("primary_color", "#0b5a44"),
         secondary_color=s.get("secondary_color", "#073e2f"),
@@ -803,7 +809,11 @@ def profile_preview(profile_code):
     if not profile:
         abort(404)
     already_unlocked = user_has_unlocked(db, profile["id"], verified_phone())
-    return render_template("profile_preview.html", profile=profile, already_unlocked=already_unlocked)
+    selection = _package_selection()
+    return render_template(
+        "profile_preview.html", profile=profile, already_unlocked=already_unlocked,
+        in_package=(profile_code in selection), package_selection=selection, package_size=_package_size(),
+    )
 
 
 @app.route("/profile/<profile_code>/preview-image")
@@ -907,6 +917,124 @@ def unlock(profile_code):
         return render_template("request_submitted.html", profile=profile, request_code=request_code)
 
     return render_template("unlock.html", profile=profile)
+
+
+# ======================================================================
+# PACKAGE UNLOCK — "3 profiles for ₹99" style bundle.
+# The user picks up to `package_size` profiles (kept in the session, not
+# the DB, until checkout — nothing is committed until they actually pay),
+# then pays once and uploads one proof for the whole bundle. Internally
+# this creates one unlock_request row per profile, all sharing the same
+# package_code, so the admin can approve/reject the whole bundle in one
+# click while each profile's unlock status is still tracked individually
+# (exactly like the single-profile flow it reuses).
+# ======================================================================
+def _package_size():
+    try:
+        return max(2, int(get_setting("package_size", "3")))
+    except ValueError:
+        return 3
+
+
+def _package_selection():
+    return session.get("package_selection", [])
+
+
+@app.route("/profile/<profile_code>/package-toggle", methods=["POST"])
+def package_toggle(profile_code):
+    db = get_db()
+    profile = db.execute(
+        "SELECT * FROM profiles WHERE profile_code = ? AND is_active = 1", (profile_code,)
+    ).fetchone()
+    if not profile:
+        abort(404)
+
+    selection = _package_selection()
+    size = _package_size()
+    if profile_code in selection:
+        selection.remove(profile_code)
+    elif len(selection) < size:
+        selection.append(profile_code)
+    else:
+        flash(f"You can only select {size} profiles for the package. Remove one first.", "error")
+    session["package_selection"] = selection
+    session.modified = True
+
+    next_url = request.form.get("next") or url_for("index")
+    return redirect(next_url)
+
+
+@app.route("/package/checkout", methods=["GET", "POST"])
+def package_checkout():
+    db = get_db()
+    size = _package_size()
+    selection = _package_selection()
+    profiles = []
+    if selection:
+        placeholders = ",".join("?" * len(selection))
+        profiles = db.execute(
+            f"SELECT * FROM profiles WHERE profile_code IN ({placeholders}) AND is_active = 1",
+            selection,
+        ).fetchall()
+
+    if request.method == "POST":
+        if len(profiles) != size:
+            flash(f"Please select exactly {size} profiles before checking out.", "error")
+            return redirect(url_for("index"))
+
+        user_name = request.form.get("user_name", "").strip()[:120]
+        user_phone = request.form.get("user_phone", "").strip()
+        message = request.form.get("message", "").strip()[:500]
+        consent = request.form.get("consent")
+
+        errors = []
+        if not valid_indian_phone(user_phone):
+            errors.append("Please enter a valid 10-digit Indian mobile number.")
+        if not consent:
+            errors.append("Please confirm you have completed the payment.")
+
+        proof_file = request.files.get("payment_proof")
+        proof_name = None
+        if not proof_file or not proof_file.filename:
+            errors.append("Please upload your payment screenshot.")
+        else:
+            try:
+                proof_name = save_payment_proof(proof_file)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("package_checkout.html", profiles=profiles, size=size)
+
+        package_code = new_request_code()
+        for profile in profiles:
+            request_code = new_request_code()
+            db.execute(
+                """
+                INSERT INTO unlock_requests
+                (request_code, profile_id, user_name, user_phone, payment_proof_name, message,
+                 status, requested_at, package_code)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (request_code, profile["id"], user_name, user_phone, proof_name, message,
+                 datetime.now().isoformat(), package_code),
+            )
+        db.commit()
+
+        session.pop("package_selection", None)
+        profile_list = ", ".join(p["profile_code"] for p in profiles)
+        notify_admin(
+            "New PACKAGE payment request",
+            f"{user_name or 'A customer'} ({user_phone}) submitted payment proof for a "
+            f"{size}-profile package ({profile_list}). Package code: {package_code}. "
+            f"Review: {request.url_root.rstrip('/')}{url_for('admin_requests')}",
+        )
+
+        return render_template("package_submitted.html", profiles=profiles, package_code=package_code)
+
+    return render_template("package_checkout.html", profiles=profiles, size=size)
 
 
 @app.route("/profile/<profile_code>/full")
@@ -1681,7 +1809,19 @@ def admin_requests():
     else:
         query += " ORDER BY ur.requested_at DESC"
         rows = db.execute(query).fetchall()
-    return render_template("admin_requests.html", rows=rows, status_filter=status_filter)
+
+    # Group rows that share a package_code into one bundle for display, so
+    # the admin sees "3-profile package" as one card instead of 3 separate
+    # identical-looking rows.
+    packages = {}
+    singles = []
+    for r in rows:
+        if r["package_code"]:
+            packages.setdefault(r["package_code"], []).append(r)
+        else:
+            singles.append(r)
+
+    return render_template("admin_requests.html", singles=singles, packages=packages, status_filter=status_filter)
 
 
 @app.route("/admin/payment-proof/<int:request_id>")
@@ -1713,13 +1853,31 @@ def admin_decide_request(request_id, action):
     return redirect(url_for("admin_requests"))
 
 
+@app.route("/admin/requests/package/<package_code>/<action>", methods=["POST"])
+@admin_required
+def admin_decide_package(package_code, action):
+    if action not in ("unlock", "reject"):
+        abort(400)
+    db = get_db()
+    new_status = "unlocked" if action == "unlock" else "rejected"
+    db.execute(
+        "UPDATE unlock_requests SET status = ?, decided_at = ? WHERE package_code = ?",
+        (new_status, datetime.now().isoformat(), package_code),
+    )
+    db.commit()
+    log_admin_action(f"package_{action}", package_code)
+    flash(f"Package marked as {new_status}.", "success")
+    return redirect(url_for("admin_requests"))
+
+
 # ======================================================================
 # ADMIN — WEBSITE SETTINGS (branding)
 # ======================================================================
 SETTINGS_TEXT_FIELDS = [
     "brand_name", "brand_tagline", "brand_phone", "whatsapp_number", "brand_email",
-    "brand_location", "unlock_price", "upi_id", "primary_color", "secondary_color",
-    "accent_color", "hero_heading", "hero_subheading", "footer_text",
+    "brand_location", "unlock_price", "package_price", "package_size", "upi_id",
+    "primary_color", "secondary_color", "accent_color", "hero_heading", "hero_subheading",
+    "footer_text",
 ]
 
 

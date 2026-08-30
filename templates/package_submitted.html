@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Package Request Submitted — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card center">
+        <div style="font-size:40px; margin-bottom:10px;">✅</div>
+        <h2 class="serif" style="color:var(--emerald-dark); margin-top:0;">Package Request Submitted Successfully</h2>
+        <p class="muted" style="font-size:14.5px;">
+            Your payment for {{ profiles|length }} profiles will be reviewed manually. Once confirmed,
+            all of them will become available under "My Requests".
+        </p>
+
+        <div class="upi-id-box" style="font-size:20px; letter-spacing:2px;">{{ package_code }}</div>
+        <p class="muted" style="font-size:13px;">This is your package reference code — worth saving if you contact us on WhatsApp about this request.</p>
+
+        <div class="table-wrap" style="margin-top:14px; text-align:left;">
+            <table>
+                <tr><th>Code</th><th>Name</th></tr>
+                {% for p in profiles %}
+                <tr><td>{{ p.profile_code }}</td><td>{{ p.name }}</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <a class="btn btn-primary btn-block" href="{{ url_for('verify_access') }}" style="margin-top:16px;">Go to My Requests</a>
+        <a class="btn btn-outline btn-block" href="{{ url_for('index') }}" style="margin-top:10px;">Back to Home</a>
+    </div>
+</section>
+
+{% endblock %}

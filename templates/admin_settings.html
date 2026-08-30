@@ -46,8 +46,15 @@
         <input type="text" name="brand_location" value="{{ settings.brand_location }}">
 
         <h3 class="section-label">Pricing &amp; Payment</h3>
-        <label>Unlock Price (₹)</label>
+        <label>Single Profile Unlock Price (₹)</label>
         <input type="text" name="unlock_price" value="{{ settings.unlock_price }}">
+
+        <label>Package Price (₹) — for the multi-profile bundle</label>
+        <input type="text" name="package_price" value="{{ settings.package_price }}">
+
+        <label>Package Size — how many profiles the package price covers</label>
+        <input type="number" name="package_size" min="2" max="10" value="{{ settings.package_size }}">
+        <div class="helptext">Example: Unlock price ₹41, Package price ₹99, Package size 3 → shows as "1 profile for ₹41, or 3 for ₹99".</div>
 
         <label>UPI ID</label>
         <input type="text" name="upi_id" value="{{ settings.upi_id }}">
