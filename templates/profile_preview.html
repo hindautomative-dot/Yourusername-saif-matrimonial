@@ -5,9 +5,12 @@
 
 <section class="container-narrow">
     <div class="card">
-        <div class="profile-photo" style="height:320px; border-radius:14px; margin-bottom:20px;">
+        <div class="profile-photo protected-photo" style="height:320px; border-radius:14px; margin-bottom:20px;" oncontextmenu="return false;">
             {% if profile.photo_preview_name %}
-                <img src="{{ url_for('profile_preview_image', profile_code=profile.profile_code) }}" alt="Profile preview" style="border-radius:14px;">
+                <img src="{{ url_for('profile_preview_image', profile_code=profile.profile_code) }}" alt="Profile preview" style="border-radius:14px;" draggable="false">
+            {% endif %}
+            {% if profile.admin_verified %}
+            <span class="verified-tick" title="Admin Verified">✔</span>
             {% endif %}
             {% if not already_unlocked %}
             <div class="photo-lock-badge" style="border-radius:14px;">
@@ -32,6 +35,7 @@
             {% if profile.community %}👥 {{ profile.community }}{% if profile.sect %} — {{ profile.sect }}{% endif %}<br>{% endif %}
             {% if profile.mother_tongue %}🗣️ {{ profile.mother_tongue }}<br>{% endif %}
             {% if profile.height %}📏 {{ profile.height }}<br>{% endif %}
+            {% if profile.hobbies %}🎨 {{ profile.hobbies }}<br>{% endif %}
         </div>
 
         {% if already_unlocked %}
@@ -67,6 +71,29 @@
         </div>
         {% endif %}
     </div>
+
+    {% if recommended %}
+    <div style="margin-top:30px;">
+        <h3 class="section-label" style="border-top:0; padding-top:0; margin-top:0;">You Might Also Like</h3>
+        <p class="helptext mt-0" style="margin-bottom:14px;">Similar hobbies or location to this profile.</p>
+        <div class="profile-grid" style="grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));">
+            {% for rp in recommended %}
+            <a class="profile-card" href="{{ url_for('profile_preview', profile_code=rp.profile_code) }}">
+                <div class="profile-photo" style="height:150px;">
+                    {% if rp.photo_preview_name %}
+                    <img src="{{ url_for('profile_preview_image', profile_code=rp.profile_code) }}" alt="Profile preview">
+                    {% endif %}
+                    {% if rp.admin_verified %}<span class="verified-tick verified-tick-sm" title="Admin Verified">✔</span>{% endif %}
+                </div>
+                <div class="profile-body" style="padding:10px;">
+                    <div class="profile-code" style="font-size:12.5px;">{{ rp.profile_code }}</div>
+                    <div class="profile-meta" style="font-size:11.5px;">{{ rp.age }} yrs · {{ rp.city }}</div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </section>
 
 {% endblock %}

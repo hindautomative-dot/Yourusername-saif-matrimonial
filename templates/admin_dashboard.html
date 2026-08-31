@@ -23,6 +23,7 @@
         <a class="btn btn-outline" href="{{ url_for('admin_profiles') }}">Manage Profiles</a>
         <a class="btn btn-outline" href="{{ url_for('admin_requests') }}">Pending Requests</a>
         <a class="btn btn-outline" href="{{ url_for('admin_registrations') }}">Self-Registrations {% if stats.reg_pending %}<span class="badge badge-pending">{{ stats.reg_pending }}</span>{% endif %}</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_photo_requests') }}">Photo Requests {% if stats.photo_req_pending %}<span class="badge badge-pending">{{ stats.photo_req_pending }}</span>{% endif %}</a>
         <a class="btn btn-outline" href="{{ url_for('admin_agents') }}">Agents</a>
         <a class="btn btn-outline" href="{{ url_for('admin_settings') }}">Website Settings</a>
         <a class="btn btn-outline" href="{{ url_for('admin_banners') }}">Banners</a>

@@ -81,6 +81,69 @@
             <label for="bio">About You (optional)</label>
             <textarea id="bio" name="bio" rows="3" placeholder="A few lines about yourself and what you're looking for"></textarea>
 
+            <h3 class="section-label">Hobbies &amp; Interests</h3>
+            <p class="helptext mt-0">Pick a few — helps us recommend you to people with similar interests too.</p>
+            <div class="hobbies-grid">
+                {% for h in ['Reading','Traveling','Cooking','Sports','Music','Photography','Gardening','Fitness / Gym','Movies','Volunteering / Social Work','Islamic Studies','Art & Craft'] %}
+                <label class="checkbox-row">
+                    <input type="checkbox" name="hobbies" value="{{ h }}">
+                    <span>{{ h }}</span>
+                </label>
+                {% endfor %}
+            </div>
+
+            <h3 class="section-label">A Few Personal Questions</h3>
+            <p class="helptext mt-0">Answered honestly — this is what helps genuine matches find each other. Fully optional.</p>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div>
+                    <label for="lifestyle_drinking">Drinking</label>
+                    <select id="lifestyle_drinking" name="lifestyle_drinking">
+                        <option value="">Prefer not to say</option>
+                        <option value="Never">Never</option>
+                        <option value="Occasionally">Occasionally</option>
+                        <option value="Regularly">Regularly</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="lifestyle_smoking">Smoking</label>
+                    <select id="lifestyle_smoking" name="lifestyle_smoking">
+                        <option value="">Prefer not to say</option>
+                        <option value="Never">Never</option>
+                        <option value="Occasionally">Occasionally</option>
+                        <option value="Regularly">Regularly</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="lifestyle_tobacco">Gutkha / Tobacco</label>
+                    <select id="lifestyle_tobacco" name="lifestyle_tobacco">
+                        <option value="">Prefer not to say</option>
+                        <option value="Never">Never</option>
+                        <option value="Occasionally">Occasionally</option>
+                        <option value="Regularly">Regularly</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="lifestyle_namaz">Namaz</label>
+                    <select id="lifestyle_namaz" name="lifestyle_namaz">
+                        <option value="">Prefer not to say</option>
+                        <option value="Regularly (5 times)">Regularly (5 times)</option>
+                        <option value="Mostly">Mostly</option>
+                        <option value="Sometimes">Sometimes</option>
+                        <option value="Rarely">Rarely</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="lifestyle_roza">Roza (Ramzan Fasting)</label>
+                    <select id="lifestyle_roza" name="lifestyle_roza">
+                        <option value="">Prefer not to say</option>
+                        <option value="Keeps all fasts">Keeps all fasts</option>
+                        <option value="Mostly">Mostly</option>
+                        <option value="Sometimes">Sometimes</option>
+                        <option value="Rarely">Rarely</option>
+                    </select>
+                </div>
+            </div>
+
             <label for="photo">Your Photo (optional, recommended)</label>
             <input type="file" id="photo" name="photo" accept="image/*" data-autoresize>
             <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
@@ -93,6 +156,11 @@
             <label class="checkbox-row">
                 <input type="checkbox" name="consent" required>
                 <span>I have completed the ₹{{ registration_price }} payment and understand my profile goes live only after admin review.</span>
+            </label>
+
+            <label class="checkbox-row">
+                <input type="checkbox" name="declaration" required>
+                <span><b>Declaration:</b> I confirm that every detail I have submitted above is true and accurate to the best of my knowledge, and I will not use this platform or any data I access through it for any fraudulent or misleading purpose.</span>
             </label>
 
             <button class="btn btn-gold btn-block" type="submit" style="margin-top:22px;">Register Myself — ₹{{ registration_price }}</button>

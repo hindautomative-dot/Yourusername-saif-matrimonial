@@ -6,7 +6,10 @@
 <section class="container-narrow">
     <div class="card">
         {% if profile.photo_original_name %}
-        <img class="full-photo" src="{{ url_for('profile_original_photo', profile_code=profile.profile_code) }}" alt="{{ profile.name }}">
+        <div class="protected-photo full-photo-wrap" oncontextmenu="return false;">
+            <img class="full-photo" src="{{ url_for('profile_original_photo', profile_code=profile.profile_code) }}" alt="{{ profile.name }}" draggable="false">
+            {% if profile.admin_verified %}<span class="verified-tick" title="Admin Verified">✔</span>{% endif %}
+        </div>
         {% endif %}
 
         <h2 class="serif" style="color:var(--emerald-dark); margin:0 0 4px;">{{ profile.name }}</h2>
@@ -46,6 +49,22 @@
         {% endif %}
         {% endif %}
 
+        {% if profile.hobbies %}
+        <h3 class="section-label">Hobbies &amp; Interests</h3>
+        <p style="font-size:14.5px; line-height:1.6;">🎨 {{ profile.hobbies }}</p>
+        {% endif %}
+
+        {% if profile.lifestyle_drinking or profile.lifestyle_smoking or profile.lifestyle_tobacco or profile.lifestyle_namaz or profile.lifestyle_roza %}
+        <h3 class="section-label">Lifestyle</h3>
+        <div class="profile-meta" style="font-size:14.5px; line-height:2;">
+            {% if profile.lifestyle_drinking %}Drinking: {{ profile.lifestyle_drinking }}<br>{% endif %}
+            {% if profile.lifestyle_smoking %}Smoking: {{ profile.lifestyle_smoking }}<br>{% endif %}
+            {% if profile.lifestyle_tobacco %}Gutkha / Tobacco: {{ profile.lifestyle_tobacco }}<br>{% endif %}
+            {% if profile.lifestyle_namaz %}Namaz: {{ profile.lifestyle_namaz }}<br>{% endif %}
+            {% if profile.lifestyle_roza %}Roza: {{ profile.lifestyle_roza }}<br>{% endif %}
+        </div>
+        {% endif %}
+
         {% if profile.bio %}
         <h3 class="section-label">About</h3>
         <p style="font-size:14.5px; line-height:1.6;">{{ profile.bio }}</p>
@@ -65,9 +84,20 @@
             {% endif %}
         </div>
 
+        <div class="card" style="margin-top:14px;">
+            <b>Want to see more photos?</b>
+            <p class="muted" style="font-size:13.5px; margin:6px 0 12px;">Send a request — our team will follow up with you directly.</p>
+            <form method="POST" action="{{ url_for('request_more_photos', profile_code=profile.profile_code) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="message" placeholder="Optional note for our team" style="margin-bottom:10px;">
+                <button class="btn btn-outline btn-block" type="submit">Request More Photos</button>
+            </form>
+        </div>
+
         <div class="privacy-note">
-            Please respect the privacy of the person represented in this profile.
-            Do not share, screenshot, or redistribute their photo or information outside genuine matrimonial consideration.
+            🚫 Screenshots, saving or forwarding this profile's photo/details outside genuine matrimonial
+            consideration is strictly prohibited and against our Terms. Please respect the privacy of the
+            person represented in this profile.
         </div>
     </div>
 </section>

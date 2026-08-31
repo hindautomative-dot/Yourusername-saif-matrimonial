@@ -73,12 +73,15 @@
 
 {% if top_banners %}
 <div class="top-banner-strip">
-    {% for b in top_banners %}
-    <a class="top-banner-slot" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
-        {% if b.title %}<span class="top-banner-tag">Sponsored</span>{% endif %}
-        <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Offer' }}">
-    </a>
-    {% endfor %}
+    <div class="banner-carousel top-banner-carousel" data-autorotate="5000">
+        {% for b in top_banners %}
+        <a class="banner-slide top-banner-slot {{ 'active' if loop.first }}" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
+            {% if b.title %}<span class="top-banner-tag">Sponsored</span>{% endif %}
+            <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Offer' }}">
+            <span class="banner-shine"></span>
+        </a>
+        {% endfor %}
+    </div>
 </div>
 {% endif %}
 
@@ -134,6 +137,27 @@
 </footer>
 
 <a class="whatsapp-fab" href="https://wa.me/91{{ whatsapp_number }}" target="_blank" rel="noopener" aria-label="WhatsApp support">💬</a>
+
+<button class="chatbot-fab" id="chatbotFab" aria-label="Chat help">🤖</button>
+<div class="chatbot-panel" id="chatbotPanel">
+    <div class="chatbot-head">
+        <span>Ask us anything</span>
+        <button id="chatbotClose" aria-label="Close chat">✕</button>
+    </div>
+    <div class="chatbot-body" id="chatbotBody">
+        <div class="chatbot-msg bot">Assalamu Alaikum! 👋 Ask me about pricing, unlocking profiles, registration or verification — or tap a question below.</div>
+    </div>
+    <div class="chatbot-quick">
+        <button type="button">How does the ₹149 package work?</button>
+        <button type="button">How do I register?</button>
+        <button type="button">What does verified mean?</button>
+        <button type="button">How to request more photos?</button>
+    </div>
+    <form class="chatbot-quick" id="chatbotForm" style="border-top:1px solid var(--line);">
+        <input type="text" id="chatbotInput" placeholder="Type your question…" style="flex:1; border:1px solid var(--line); border-radius:14px; padding:8px 12px; font-size:13px;">
+        <button type="submit" class="btn btn-sm btn-primary" style="border-radius:14px;">Send</button>
+    </form>
+</div>
 
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% if session.get('is_admin') %}

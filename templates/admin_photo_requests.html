@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Photo Requests{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">"Request More Photos" — Queue</h1>
+    <p class="section-sub">People who already unlocked a profile can ask for more photos. Nothing is sent automatically — reply to them directly, then mark it fulfilled.</p>
+
+    <div class="tabs">
+        <a href="{{ url_for('admin_photo_requests', status='pending') }}" class="{{ 'active' if status_filter=='pending' }}">Pending</a>
+        <a href="{{ url_for('admin_photo_requests', status='fulfilled') }}" class="{{ 'active' if status_filter=='fulfilled' }}">Fulfilled</a>
+        <a href="{{ url_for('admin_photo_requests', status='rejected') }}" class="{{ 'active' if status_filter=='rejected' }}">Rejected</a>
+        <a href="{{ url_for('admin_photo_requests', status='all') }}" class="{{ 'active' if status_filter=='all' }}">All</a>
+    </div>
+
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Profile</th><th>Requested By</th><th>Message</th><th>When</th><th>Status</th><th>Actions</th></tr>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.profile_code }} — {{ r.profile_name }}</td>
+                <td>{{ r.requester_phone }}</td>
+                <td>{{ r.message or '—' }}</td>
+                <td>{{ r.requested_at[:16].replace('T',' ') }}</td>
+                <td>
+                    {% if r.status == 'pending' %}<span class="badge badge-pending">Pending</span>
+                    {% elif r.status == 'fulfilled' %}<span class="badge badge-unlocked">Fulfilled</span>
+                    {% else %}<span class="badge badge-rejected">Rejected</span>{% endif %}
+                </td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    {% if r.status == 'pending' %}
+                    <a class="btn btn-sm btn-outline" href="https://wa.me/91{{ r.requester_phone }}" target="_blank" rel="noopener">WhatsApp</a>
+                    <form method="POST" action="{{ url_for('admin_decide_photo_request', req_id=r.id, action='fulfilled') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-primary" type="submit">Mark Fulfilled</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_decide_photo_request', req_id=r.id, action='rejected') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+                    </form>
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">📸</div>
+        <p>No photo requests here.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

@@ -66,6 +66,66 @@
         <label>Bio / About</label>
         <textarea name="bio" rows="4">{{ f.bio or '' }}</textarea>
 
+        <h3 class="section-label">Hobbies &amp; Interests</h3>
+        <div class="hobbies-grid">
+            {% set selected_hobbies = (f.hobbies.split(', ') if f.hobbies else []) %}
+            {% for h in ['Reading','Traveling','Cooking','Sports','Music','Photography','Gardening','Fitness / Gym','Movies','Volunteering / Social Work','Islamic Studies','Art & Craft'] %}
+            <label class="checkbox-row">
+                <input type="checkbox" name="hobbies" value="{{ h }}" {{ 'checked' if h in selected_hobbies }}>
+                <span>{{ h }}</span>
+            </label>
+            {% endfor %}
+        </div>
+
+        <h3 class="section-label">Lifestyle Questionnaire</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+                <label>Drinking</label>
+                <select name="lifestyle_drinking">
+                    <option value="">Prefer not to say</option>
+                    {% for opt in ['Never','Occasionally','Regularly'] %}
+                    <option value="{{ opt }}" {{ 'selected' if f.lifestyle_drinking==opt }}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Smoking</label>
+                <select name="lifestyle_smoking">
+                    <option value="">Prefer not to say</option>
+                    {% for opt in ['Never','Occasionally','Regularly'] %}
+                    <option value="{{ opt }}" {{ 'selected' if f.lifestyle_smoking==opt }}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Gutkha / Tobacco</label>
+                <select name="lifestyle_tobacco">
+                    <option value="">Prefer not to say</option>
+                    {% for opt in ['Never','Occasionally','Regularly'] %}
+                    <option value="{{ opt }}" {{ 'selected' if f.lifestyle_tobacco==opt }}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Namaz</label>
+                <select name="lifestyle_namaz">
+                    <option value="">Prefer not to say</option>
+                    {% for opt in ['Regularly (5 times)','Mostly','Sometimes','Rarely'] %}
+                    <option value="{{ opt }}" {{ 'selected' if f.lifestyle_namaz==opt }}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Roza (Ramzan Fasting)</label>
+                <select name="lifestyle_roza">
+                    <option value="">Prefer not to say</option>
+                    {% for opt in ['Keeps all fasts','Mostly','Sometimes','Rarely'] %}
+                    <option value="{{ opt }}" {{ 'selected' if f.lifestyle_roza==opt }}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
         <h3 class="section-label">Contact &amp; Privacy</h3>
         <label>Contact Number</label>
         <input type="text" name="contact_number" value="{{ f.contact_number or '' }}">

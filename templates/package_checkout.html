@@ -76,6 +76,11 @@
                 <span>I have completed the payment and understand that profile access is subject to manual verification.</span>
             </label>
 
+            <label class="checkbox-row">
+                <input type="checkbox" name="viewer_declaration" required>
+                <span><b>Declaration:</b> I am viewing these profiles for genuine matrimonial purposes only. I will not screenshot, save, share, or redistribute any profile's photo or details outside genuine consideration, and I understand doing so violates our <a href="{{ url_for('terms') }}" target="_blank">Terms</a>.</span>
+            </label>
+
             <button class="btn btn-gold btn-block" type="submit" style="margin-top:22px;">Submit Package Request</button>
         </form>
         {% endif %}

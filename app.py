@@ -328,6 +328,19 @@ def init_db():
             decided_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS photo_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_id INTEGER NOT NULL,
+            requester_phone TEXT NOT NULL,
+            message TEXT,
+            status TEXT DEFAULT 'pending',
+            requested_at TEXT NOT NULL,
+            decided_at TEXT,
+            FOREIGN KEY (profile_id) REFERENCES profiles (id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_photo_requests_status ON photo_requests(status);
+        CREATE INDEX IF NOT EXISTS idx_photo_requests_profile ON photo_requests(profile_id);
         CREATE INDEX IF NOT EXISTS idx_agents_phone ON agents(phone);
         CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON agent_activity_log(agent_id);
         CREATE INDEX IF NOT EXISTS idx_self_reg_status ON self_registrations(status);
@@ -350,10 +363,27 @@ def init_db():
         ("income", "TEXT"), ("work_location", "TEXT"), ("family_details", "TEXT"),
         ("contact_visible", "INTEGER"), ("admin_verified", "INTEGER"),
         ("phone_verified", "INTEGER"), ("photo_reviewed", "INTEGER"),
+        # Hobbies (comma-separated, used for the "similar profiles" matching)
+        # and the short lifestyle questionnaire asked at profile creation.
+        ("hobbies", "TEXT"),
+        ("lifestyle_drinking", "TEXT"), ("lifestyle_smoking", "TEXT"),
+        ("lifestyle_tobacco", "TEXT"), ("lifestyle_namaz", "TEXT"), ("lifestyle_roza", "TEXT"),
+        ("declaration_accepted", "INTEGER"),
     ]:
         _ensure_column(db, "profiles", col, coltype)
 
+    for col, coltype in [
+        ("hobbies", "TEXT"),
+        ("lifestyle_drinking", "TEXT"), ("lifestyle_smoking", "TEXT"),
+        ("lifestyle_tobacco", "TEXT"), ("lifestyle_namaz", "TEXT"), ("lifestyle_roza", "TEXT"),
+        ("declaration_accepted", "INTEGER"),
+    ]:
+        _ensure_column(db, "self_registrations", col, coltype)
+
     _ensure_column(db, "unlock_requests", "package_code", "TEXT")
+    # Viewer's declaration that the info won't be misused/screenshotted,
+    # recorded at the moment they submit an unlock/package request.
+    _ensure_column(db, "unlock_requests", "viewer_declaration", "INTEGER")
 
     defaults = {
         "brand_name": os.environ.get("BUSINESS_NAME", "Saif Matrimonial Services"),
@@ -707,6 +737,32 @@ def user_has_unlocked(db, profile_id, phone):
     ).fetchone()
 
 
+def get_recommended_profiles(db, profile, limit=4):
+    """'You might also like' — other active profiles ranked by how many
+    hobbies they share with this one, then by same-city, then newest.
+    Scored in Python (SQLite has no easy set-intersection function) since
+    the active profile list on a matrimonial site like this is small."""
+    my_hobbies = {h.strip().lower() for h in (profile["hobbies"] or "").split(",") if h.strip()}
+    candidates = db.execute(
+        "SELECT * FROM profiles WHERE is_active = 1 AND id != ? ORDER BY created_at DESC LIMIT 200",
+        (profile["id"],),
+    ).fetchall()
+
+    scored = []
+    for c in candidates:
+        c_hobbies = {h.strip().lower() for h in (c["hobbies"] or "").split(",") if h.strip()}
+        shared = len(my_hobbies & c_hobbies)
+        same_city = 1 if (c["city"] or "").strip().lower() == (profile["city"] or "").strip().lower() else 0
+        # Weight shared hobbies highest, then same city — both are what the
+        # site owner asked for ("matching hobbies + similar location").
+        score = shared * 10 + same_city * 3
+        if shared or same_city:
+            scored.append((score, c))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [c for _, c in scored[:limit]]
+
+
 PHONE_RE = re.compile(r"^[6-9]\d{9}$")
 
 
@@ -848,9 +904,11 @@ def profile_preview(profile_code):
         abort(404)
     already_unlocked = user_has_unlocked(db, profile["id"], verified_phone())
     selection = _package_selection()
+    recommended = get_recommended_profiles(db, profile)
     return render_template(
         "profile_preview.html", profile=profile, already_unlocked=already_unlocked,
         in_package=(profile_code in selection), package_selection=selection, package_size=_package_size(),
+        recommended=recommended,
     )
 
 
@@ -900,12 +958,15 @@ def unlock(profile_code):
         user_phone = request.form.get("user_phone", "").strip()
         message = request.form.get("message", "").strip()[:500]
         consent = request.form.get("consent")
+        viewer_declaration = request.form.get("viewer_declaration")
 
         errors = []
         if not valid_indian_phone(user_phone):
             errors.append("Please enter a valid 10-digit Indian mobile number.")
         if not consent:
             errors.append("Please confirm you have completed the payment.")
+        if not viewer_declaration:
+            errors.append("Please confirm the declaration about genuine use and not misusing/screenshotting the profile data.")
 
         proof_file = request.files.get("payment_proof")
         proof_name = None
@@ -934,8 +995,9 @@ def unlock(profile_code):
         db.execute(
             """
             INSERT INTO unlock_requests
-            (request_code, profile_id, user_name, user_phone, payment_proof_name, message, status, requested_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+            (request_code, profile_id, user_name, user_phone, payment_proof_name, message,
+             viewer_declaration, status, requested_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 'pending', ?)
             """,
             (request_code, profile["id"], user_name, user_phone, proof_name, message, datetime.now().isoformat()),
         )
@@ -1024,12 +1086,15 @@ def package_checkout():
         user_phone = request.form.get("user_phone", "").strip()
         message = request.form.get("message", "").strip()[:500]
         consent = request.form.get("consent")
+        viewer_declaration = request.form.get("viewer_declaration")
 
         errors = []
         if not valid_indian_phone(user_phone):
             errors.append("Please enter a valid 10-digit Indian mobile number.")
         if not consent:
             errors.append("Please confirm you have completed the payment.")
+        if not viewer_declaration:
+            errors.append("Please confirm the declaration about genuine use and not misusing/screenshotting the profile data.")
 
         proof_file = request.files.get("payment_proof")
         proof_name = None
@@ -1053,8 +1118,8 @@ def package_checkout():
                 """
                 INSERT INTO unlock_requests
                 (request_code, profile_id, user_name, user_phone, payment_proof_name, message,
-                 status, requested_at, package_code)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                 viewer_declaration, status, requested_at, package_code)
+                VALUES (?, ?, ?, ?, ?, ?, 1, 'pending', ?, ?)
                 """,
                 (request_code, profile["id"], user_name, user_phone, proof_name, message,
                  datetime.now().isoformat(), package_code),
@@ -1096,6 +1161,13 @@ def register_yourself():
         profession = request.form.get("profession", "").strip()[:150]
         bio = request.form.get("bio", "").strip()[:800]
         consent = request.form.get("consent")
+        declaration = request.form.get("declaration")
+        hobbies = ", ".join(h.strip() for h in request.form.getlist("hobbies") if h.strip())[:300]
+        lifestyle_drinking = request.form.get("lifestyle_drinking", "").strip()[:30]
+        lifestyle_smoking = request.form.get("lifestyle_smoking", "").strip()[:30]
+        lifestyle_tobacco = request.form.get("lifestyle_tobacco", "").strip()[:30]
+        lifestyle_namaz = request.form.get("lifestyle_namaz", "").strip()[:30]
+        lifestyle_roza = request.form.get("lifestyle_roza", "").strip()[:30]
 
         errors = []
         if not name:
@@ -1110,6 +1182,8 @@ def register_yourself():
             errors.append("Please enter your city.")
         if not consent:
             errors.append("Please confirm you have completed the ₹{} payment.".format(get_setting("registration_price", "11")))
+        if not declaration:
+            errors.append("Please confirm the declaration that all information you're submitting is true.")
 
         photo_original_name = photo_preview_name = None
         photo_file = request.files.get("photo")
@@ -1140,10 +1214,13 @@ def register_yourself():
             """
             INSERT INTO self_registrations
             (request_code, name, phone, age, gender, city, marital_status, education, profession, bio,
+             hobbies, lifestyle_drinking, lifestyle_smoking, lifestyle_tobacco, lifestyle_namaz,
+             lifestyle_roza, declaration_accepted,
              photo_original_name, photo_preview_name, payment_proof_name, status, requested_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 'pending', ?)
             """,
             (request_code, name, phone, int(age), gender, city, marital_status, education, profession, bio,
+             hobbies, lifestyle_drinking, lifestyle_smoking, lifestyle_tobacco, lifestyle_namaz, lifestyle_roza,
              photo_original_name, photo_preview_name, proof_name, datetime.now().isoformat()),
         )
         db.commit()
@@ -1170,6 +1247,41 @@ def profile_full(profile_code):
         flash("This profile isn't unlocked for your verified number yet.", "error")
         return redirect(url_for("verify_access"))
     return render_template("profile_full.html", profile=profile)
+
+
+@app.route("/profile/<profile_code>/request-more-photos", methods=["POST"])
+def request_more_photos(profile_code):
+    """Lets someone who has already unlocked a profile ask the admin for
+    additional photos. This never auto-sends anything — it just logs a
+    request and pings the admin, same manual-review pattern as everything
+    else on this site."""
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
+    if not profile:
+        abort(404)
+
+    phone = verified_phone()
+    unlocked = user_has_unlocked(db, profile["id"], phone)
+    if not unlocked:
+        flash("Only someone who has unlocked this profile can request more photos.", "error")
+        return redirect(url_for("verify_access"))
+
+    message = request.form.get("message", "").strip()[:300]
+    db.execute(
+        """
+        INSERT INTO photo_requests (profile_id, requester_phone, message, status, requested_at)
+        VALUES (?, ?, ?, 'pending', ?)
+        """,
+        (profile["id"], phone, message, datetime.now().isoformat()),
+    )
+    db.commit()
+    notify_admin(
+        "More photos requested",
+        f"{phone} requested more photos for profile {profile['profile_code']} ({profile['name']}). "
+        f"Review: {request.url_root.rstrip('/')}{url_for('admin_photo_requests')}",
+    )
+    flash("Your request for more photos has been sent to our team.", "success")
+    return redirect(url_for("profile_full", profile_code=profile_code))
 
 
 # ======================================================================
@@ -1713,6 +1825,7 @@ def admin_dashboard():
         "agents_active": db.execute("SELECT COUNT(*) c FROM agents WHERE is_active=1").fetchone()["c"],
         "reg_pending": db.execute("SELECT COUNT(*) c FROM self_registrations WHERE status='pending'").fetchone()["c"],
         "reg_total": db.execute("SELECT COUNT(*) c FROM self_registrations").fetchone()["c"],
+        "photo_req_pending": db.execute("SELECT COUNT(*) c FROM photo_requests WHERE status='pending'").fetchone()["c"],
     }
     recent_pending = db.execute(
         """
@@ -1768,6 +1881,12 @@ def _profile_form_fields():
         "admin_verified": 1 if request.form.get("admin_verified") else 0,
         "phone_verified": 1 if request.form.get("phone_verified") else 0,
         "photo_reviewed": 1 if request.form.get("photo_reviewed") else 0,
+        "hobbies": ", ".join(h.strip() for h in request.form.getlist("hobbies") if h.strip())[:300],
+        "lifestyle_drinking": request.form.get("lifestyle_drinking", "").strip()[:30],
+        "lifestyle_smoking": request.form.get("lifestyle_smoking", "").strip()[:30],
+        "lifestyle_tobacco": request.form.get("lifestyle_tobacco", "").strip()[:30],
+        "lifestyle_namaz": request.form.get("lifestyle_namaz", "").strip()[:30],
+        "lifestyle_roza": request.form.get("lifestyle_roza", "").strip()[:30],
     }
 
 
@@ -1808,14 +1927,18 @@ def admin_add_profile():
             (profile_code, name, age, gender, city, state, marital_status, education, profession,
              community, sect, mother_tongue, height, income, work_location, family_details, bio,
              contact_number, contact_visible, admin_verified, phone_verified, photo_reviewed,
+             hobbies, lifestyle_drinking, lifestyle_smoking, lifestyle_tobacco, lifestyle_namaz,
+             lifestyle_roza, declaration_accepted,
              photo_original_name, photo_preview_name, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, ?)
             """,
             (
                 profile_code, f["name"], age, f["gender"], f["city"], f["state"], f["marital_status"],
                 f["education"], f["profession"], f["community"], f["sect"], f["mother_tongue"], f["height"],
                 f["income"], f["work_location"], f["family_details"], f["bio"], f["contact_number"],
                 f["contact_visible"], f["admin_verified"], f["phone_verified"], f["photo_reviewed"],
+                f["hobbies"], f["lifestyle_drinking"], f["lifestyle_smoking"], f["lifestyle_tobacco"],
+                f["lifestyle_namaz"], f["lifestyle_roza"],
                 original_name, preview_name, datetime.now().isoformat(),
             ),
         )
@@ -1874,13 +1997,16 @@ def admin_edit_profile(profile_id):
             UPDATE profiles SET name=?, age=?, gender=?, city=?, state=?, marital_status=?, education=?,
             profession=?, community=?, sect=?, mother_tongue=?, height=?, income=?, work_location=?,
             family_details=?, bio=?, contact_number=?, contact_visible=?, admin_verified=?,
-            phone_verified=?, photo_reviewed=? WHERE id=?
+            phone_verified=?, photo_reviewed=?, hobbies=?, lifestyle_drinking=?, lifestyle_smoking=?,
+            lifestyle_tobacco=?, lifestyle_namaz=?, lifestyle_roza=? WHERE id=?
             """,
             (
                 f["name"], age, f["gender"], f["city"], f["state"], f["marital_status"], f["education"],
                 f["profession"], f["community"], f["sect"], f["mother_tongue"], f["height"], f["income"],
                 f["work_location"], f["family_details"], f["bio"], f["contact_number"], f["contact_visible"],
-                f["admin_verified"], f["phone_verified"], f["photo_reviewed"], profile_id,
+                f["admin_verified"], f["phone_verified"], f["photo_reviewed"],
+                f["hobbies"], f["lifestyle_drinking"], f["lifestyle_smoking"], f["lifestyle_tobacco"],
+                f["lifestyle_namaz"], f["lifestyle_roza"], profile_id,
             ),
         )
         db.commit()
@@ -2052,11 +2178,15 @@ def admin_decide_registration(reg_id, action):
         INSERT INTO profiles
         (profile_code, name, age, gender, city, marital_status, education, profession,
          bio, contact_number, contact_visible, admin_verified, phone_verified, photo_reviewed,
+         hobbies, lifestyle_drinking, lifestyle_smoking, lifestyle_tobacco, lifestyle_namaz,
+         lifestyle_roza, declaration_accepted,
          photo_original_name, photo_preview_name, is_active, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?, 1, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
         """,
         (profile_code, row["name"], row["age"], row["gender"], row["city"], row["marital_status"],
          row["education"], row["profession"], row["bio"], row["phone"],
+         row["hobbies"], row["lifestyle_drinking"], row["lifestyle_smoking"], row["lifestyle_tobacco"],
+         row["lifestyle_namaz"], row["lifestyle_roza"], row["declaration_accepted"],
          row["photo_original_name"], row["photo_preview_name"], datetime.now().isoformat()),
     )
     new_profile = db.execute("SELECT id FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
@@ -2068,6 +2198,43 @@ def admin_decide_registration(reg_id, action):
     log_admin_action("registration_approve", f"{reg_id} -> {profile_code}")
     flash(f"Registration approved — profile {profile_code} is now live. You can review/edit it any time.", "success")
     return redirect(url_for("admin_registrations"))
+
+
+# ======================================================================
+# ADMIN — "REQUEST MORE PHOTOS" QUEUE
+# ======================================================================
+@app.route("/admin/photo-requests")
+@admin_required
+def admin_photo_requests():
+    db = get_db()
+    status_filter = request.args.get("status", "pending")
+    query = """
+        SELECT pr.*, p.profile_code, p.name AS profile_name
+        FROM photo_requests pr JOIN profiles p ON p.id = pr.profile_id
+    """
+    if status_filter != "all":
+        query += " WHERE pr.status = ? ORDER BY pr.requested_at DESC"
+        rows = db.execute(query, (status_filter,)).fetchall()
+    else:
+        query += " ORDER BY pr.requested_at DESC"
+        rows = db.execute(query).fetchall()
+    return render_template("admin_photo_requests.html", rows=rows, status_filter=status_filter)
+
+
+@app.route("/admin/photo-requests/<int:req_id>/<action>", methods=["POST"])
+@admin_required
+def admin_decide_photo_request(req_id, action):
+    if action not in ("fulfilled", "rejected"):
+        abort(400)
+    db = get_db()
+    db.execute(
+        "UPDATE photo_requests SET status = ?, decided_at = ? WHERE id = ?",
+        (action, datetime.now().isoformat(), req_id),
+    )
+    db.commit()
+    log_admin_action(f"photo_request_{action}", str(req_id))
+    flash(f"Photo request marked as {action}.", "success")
+    return redirect(url_for("admin_photo_requests"))
 
 
 # ======================================================================
