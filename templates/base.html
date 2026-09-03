@@ -16,11 +16,30 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22{{ primary_color|replace('#','%23') }}%22/><text x=%2250%22 y=%2266%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22%23e8d9b8%22 font-family=%22Georgia%22>{{ business_name[0]|upper }}</text></svg>">
 {% endif %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+    {% for f in custom_fonts %}
+    @font-face {
+        font-family: "{{ f.label }}";
+        src: url("{{ url_for('static', filename='fonts/' + f.filename) }}");
+        font-weight: {{ f.weight }};
+        font-display: swap;
+    }
+    {% endfor %}
     :root {
         --emerald: {{ primary_color }};
         --emerald-dark: {{ secondary_color }};
         --gold: {{ accent_color }};
+        --ivory: {{ background_color }};
+        --charcoal: {{ text_color }};
+        --muted: {{ muted_color }};
+        --line: {{ border_color }};
+        --card: {{ card_color }};
+        --font-heading: "{{ font_heading }}", Georgia, serif;
+        --font-body: "{{ font_body }}", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        --font-button: "{{ font_button }}", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
         {% if nav_bg_image %}--nav-bg-image: url("{{ url_for('static', filename='branding/' + nav_bg_image) }}");{% endif %}
         {% if hero_bg_image %}--hero-bg-image: url("{{ url_for('static', filename='branding/' + hero_bg_image) }}");{% endif %}
         {% if section_bg_image %}--section-bg-image: url("{{ url_for('static', filename='branding/' + section_bg_image) }}");{% endif %}

@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Appearance Settings — Admin{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<section class="container" style="max-width:980px;">
+    <h1 class="section-title">Appearance Settings</h1>
+    <p class="muted" style="margin-top:-10px;">Change colors, fonts and theme presets for the whole site — no code needed. Changes apply everywhere after you click Save.</p>
+
+    <div style="display:flex; gap:12px; margin:18px 0;">
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_dashboard') }}">← Dashboard</a>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_settings') }}">Website Settings</a>
+    </div>
+
+    <h2 class="section-title" style="font-size:19px;">1. Theme Presets</h2>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:14px; margin-bottom:30px;">
+        {% for key, p in presets.items() %}
+        <form method="post" action="{{ url_for('admin_appearance') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="apply_preset">
+            <input type="hidden" name="preset" value="{{ key }}">
+            <button type="submit" class="card" style="width:100%; text-align:left; cursor:pointer; border:2px solid {{ 'var(--gold)' if settings.theme_preset == key else 'var(--line)' }}; padding:0; overflow:hidden;">
+                <div style="height:56px; display:flex;">
+                    <div style="flex:2; background:{{ p.primary_color }};"></div>
+                    <div style="flex:1; background:{{ p.accent_color }};"></div>
+                    <div style="flex:1; background:{{ p.background_color }}; border-left:1px solid rgba(0,0,0,.08);"></div>
+                </div>
+                <div style="padding:10px 12px; font-size:13.5px; font-weight:600;">{{ p.label }}{% if settings.theme_preset == key %} ✓{% endif %}</div>
+            </button>
+        </form>
+        {% endfor %}
+    </div>
+
+    <h2 class="section-title" style="font-size:19px;">2. Custom Theme</h2>
+    <form method="post" action="{{ url_for('admin_appearance') }}" id="themeForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="save_theme">
+
+        <div class="form-grid">
+            {% for key, label, tip in [
+                ('primary_color','Primary Color','Main brand color — primary buttons, highlights.'),
+                ('secondary_color','Secondary Color','Supporting brand color for secondary components.'),
+                ('accent_color','Accent Color','Premium highlights, badges, decorative details.'),
+                ('background_color','Background Color','Main page background.'),
+                ('card_color','Card Color','Background of cards and panels.'),
+                ('text_color','Text Color','Main readable text.'),
+                ('muted_color','Muted Text','Secondary descriptions and helper text.'),
+                ('border_color','Border Color','Input and card borders.'),
+            ] %}
+            <div class="form-field">
+                <label title="{{ tip }}">{{ label }} <span style="opacity:.5; cursor:help;">ⓘ</span></label>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="color" name="{{ key }}_picker" value="{{ settings[key] }}" class="theme-color-picker" data-target="{{ key }}" style="width:44px; height:40px; border:1px solid var(--line); border-radius:8px; padding:2px; background:none;">
+                    <input type="text" name="{{ key }}" id="{{ key }}" value="{{ settings[key] }}" class="input" style="font-family:monospace;">
+                </div>
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">{{ tip }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div id="contrastNote" style="margin:14px 0; font-size:13.5px; font-weight:600;"></div>
+
+        <h2 class="section-title" style="font-size:19px; margin-top:26px;">3. Typography</h2>
+        <div class="form-grid">
+            <div class="form-field">
+                <label>Heading Font <span title="Main headings across the website." style="opacity:.5; cursor:help;">ⓘ</span></label>
+                <select name="font_heading" class="input" id="fontHeadingSelect">
+                    {% for f in web_safe_fonts %}<option value="{{ f }}" {{ 'selected' if settings.font_heading == f }}>{{ f }}</option>{% endfor %}
+                    {% for cf in custom_fonts %}<option value="{{ cf.label }}" {{ 'selected' if settings.font_heading == cf.label }}>{{ cf.label }} (uploaded)</option>{% endfor %}
+                </select>
+            </div>
+            <div class="form-field">
+                <label>Body Font <span title="Paragraphs, navigation and normal UI." style="opacity:.5; cursor:help;">ⓘ</span></label>
+                <select name="font_body" class="input" id="fontBodySelect">
+                    {% for f in web_safe_fonts %}<option value="{{ f }}" {{ 'selected' if settings.font_body == f }}>{{ f }}</option>{% endfor %}
+                    {% for cf in custom_fonts %}<option value="{{ cf.label }}" {{ 'selected' if settings.font_body == cf.label }}>{{ cf.label }} (uploaded)</option>{% endfor %}
+                </select>
+            </div>
+            <div class="form-field">
+                <label>Button Font <span title="CTA/button typography." style="opacity:.5; cursor:help;">ⓘ</span></label>
+                <select name="font_button" class="input" id="fontButtonSelect">
+                    {% for f in web_safe_fonts %}<option value="{{ f }}" {{ 'selected' if settings.font_button == f }}>{{ f }}</option>{% endfor %}
+                    {% for cf in custom_fonts %}<option value="{{ cf.label }}" {{ 'selected' if settings.font_button == cf.label }}>{{ cf.label }} (uploaded)</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <h2 class="section-title" style="font-size:19px; margin-top:26px;">Live Preview</h2>
+        <div class="card" id="livePreview" style="padding:22px; background:{{ settings.card_color }}; border-color:{{ settings.border_color }};">
+            <div style="font-family:'{{ settings.font_heading }}',serif; font-size:26px; font-weight:700; color:{{ settings.text_color }};" id="prevHeading">Find Your Life Partner</div>
+            <p style="font-family:'{{ settings.font_body }}',sans-serif; color:{{ settings.muted_color }}; font-size:14px;" id="prevBody">A serious, privacy-first matrimonial service.</p>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button type="button" id="prevBtn" style="font-family:'{{ settings.font_button }}',sans-serif; background:{{ settings.primary_color }}; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600;">Browse Profiles</button>
+                <span id="prevBadge" style="background:{{ settings.accent_color }}; color:#fff; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700;">VERIFIED</span>
+                <input id="prevInput" placeholder="Sample input" style="border:1px solid {{ settings.border_color }}; border-radius:8px; padding:8px 12px; font-size:13px;">
+            </div>
+        </div>
+
+        <div style="margin-top:22px; display:flex; gap:12px; flex-wrap:wrap;">
+            <button type="submit" class="btn btn-primary">Save Theme</button>
+        </div>
+    </form>
+
+    <form method="post" action="{{ url_for('admin_appearance') }}" style="margin-top:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="reset_theme">
+        <button type="submit" class="btn btn-outline btn-sm" onclick="return confirm('Reset to the default Emerald & Champagne theme?')">Reset to Default Theme</button>
+    </form>
+
+    <h2 class="section-title" style="font-size:19px; margin-top:36px;">4. Upload Custom Font</h2>
+    <form method="post" action="{{ url_for('admin_appearance') }}" enctype="multipart/form-data" class="card" style="padding:20px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="upload_font">
+        <div class="form-grid">
+            <div class="form-field">
+                <label>Font Name</label>
+                <input type="text" name="font_label" class="input" placeholder="e.g. Noor Serif" required>
+            </div>
+            <div class="form-field">
+                <label>Weight</label>
+                <select name="font_weight" class="input">
+                    <option value="400">Regular</option>
+                    <option value="500">Medium</option>
+                    <option value="600">SemiBold</option>
+                    <option value="700">Bold</option>
+                </select>
+            </div>
+            <div class="form-field">
+                <label>Font File (.woff2, .woff, .ttf — max 5MB)</label>
+                <input type="file" name="font_file" accept=".woff2,.woff,.ttf" class="input" required>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-outline" style="margin-top:10px;">Upload Font</button>
+    </form>
+
+    {% if custom_fonts %}
+    <div class="table-wrap" style="margin-top:18px;">
+        <table>
+            <tr><th>Name</th><th>Weight</th><th>File</th><th></th></tr>
+            {% for f in custom_fonts %}
+            <tr>
+                <td style="font-family:'{{ f.label }}';">{{ f.label }} — Aa Bb Cc</td>
+                <td>{{ f.weight }}</td>
+                <td>{{ f.filename }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('admin_appearance') }}" onsubmit="return confirm('Remove this font?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="delete_font">
+                        <input type="hidden" name="font_id" value="{{ f.id }}">
+                        <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+</section>
+
+<script>
+(function(){
+    function luminance(hex){
+        hex = hex.replace('#','');
+        if(hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+        var r=parseInt(hex.substr(0,2),16)/255, g=parseInt(hex.substr(2,2),16)/255, b=parseInt(hex.substr(4,2),16)/255;
+        [r,g,b] = [r,g,b].map(c => c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4));
+        return 0.2126*r+0.7152*g+0.0722*b;
+    }
+    function contrast(a,b){
+        var la=luminance(a), lb=luminance(b);
+        var lighter=Math.max(la,lb), darker=Math.min(la,lb);
+        return (lighter+0.05)/(darker+0.05);
+    }
+    function syncPreview(){
+        var get = id => document.getElementById(id).value || '#000000';
+        var text=get('text_color'), bg=get('background_color'), card=get('card_color'),
+            primary=get('primary_color'), accent=get('accent_color'), border=get('border_color'), muted=get('muted_color');
+        document.getElementById('livePreview').style.background = card;
+        document.getElementById('livePreview').style.borderColor = border;
+        document.getElementById('prevHeading').style.color = text;
+        document.getElementById('prevBody').style.color = muted;
+        document.getElementById('prevBtn').style.background = primary;
+        document.getElementById('prevBadge').style.background = accent;
+        document.getElementById('prevInput').style.borderColor = border;
+        document.getElementById('prevHeading').style.fontFamily = "'" + document.getElementById('fontHeadingSelect').value + "',serif";
+        document.getElementById('prevBody').style.fontFamily = "'" + document.getElementById('fontBodySelect').value + "',sans-serif";
+        document.getElementById('prevBtn').style.fontFamily = "'" + document.getElementById('fontButtonSelect').value + "',sans-serif";
+
+        var ratio1 = contrast(text, bg).toFixed(2);
+        var ratio2 = contrast(text, card).toFixed(2);
+        var minRatio = Math.min(ratio1, ratio2);
+        var note = document.getElementById('contrastNote');
+        if(minRatio < 4.5){
+            note.style.color = '#a3342c';
+            note.textContent = '⚠ Low contrast (' + minRatio + ':1) — please choose another Text/Background/Card color. Minimum needed: 4.5:1.';
+        } else {
+            note.style.color = '#1f6f4a';
+            note.textContent = '✓ Good contrast (' + minRatio + ':1)';
+        }
+    }
+    document.querySelectorAll('.theme-color-picker').forEach(function(picker){
+        picker.addEventListener('input', function(){
+            document.getElementById(picker.dataset.target).value = picker.value;
+            syncPreview();
+        });
+    });
+    document.querySelectorAll('#themeForm input[type=text]').forEach(function(inp){
+        inp.addEventListener('input', syncPreview);
+    });
+    ['fontHeadingSelect','fontBodySelect','fontButtonSelect'].forEach(function(id){
+        document.getElementById(id).addEventListener('change', syncPreview);
+    });
+    syncPreview();
+})();
+</script>
+{% endblock %}

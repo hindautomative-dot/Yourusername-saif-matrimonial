@@ -29,6 +29,7 @@
         <a class="btn btn-outline" href="{{ url_for('admin_photo_requests') }}">Photo Requests {% if stats.photo_req_pending %}<span class="badge badge-pending">{{ stats.photo_req_pending }}</span>{% endif %}</a>
         <a class="btn btn-outline" href="{{ url_for('admin_agents') }}">Agents</a>
         <a class="btn btn-outline" href="{{ url_for('admin_settings') }}">Website Settings</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_appearance') }}">Appearance / Theme</a>
         <a class="btn btn-outline" href="{{ url_for('admin_banners') }}">Banners</a>
         <a class="btn btn-outline" href="{{ url_for('admin_logout') }}">Logout</a>
     </div>

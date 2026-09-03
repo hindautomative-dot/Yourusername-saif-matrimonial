@@ -340,6 +340,74 @@ def init_db():
             decided_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS custom_fonts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            weight TEXT DEFAULT '400',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS shop_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            slug TEXT UNIQUE NOT NULL,
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS shop_products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category_id INTEGER,
+            name TEXT NOT NULL,
+            slug TEXT UNIQUE NOT NULL,
+            description TEXT,
+            price REAL NOT NULL,
+            discount_price REAL,
+            stock INTEGER DEFAULT 0,
+            has_variants INTEGER DEFAULT 0,
+            images TEXT,
+            status TEXT DEFAULT 'active',
+            featured INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (category_id) REFERENCES shop_categories (id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS shop_variants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            size TEXT,
+            color TEXT,
+            stock INTEGER DEFAULT 0,
+            FOREIGN KEY (product_id) REFERENCES shop_products (id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS shop_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_code TEXT UNIQUE NOT NULL,
+            customer_name TEXT NOT NULL,
+            customer_phone TEXT NOT NULL,
+            customer_address TEXT NOT NULL,
+            total_amount REAL NOT NULL,
+            payment_status TEXT DEFAULT 'pending',
+            order_status TEXT DEFAULT 'pending',
+            payment_proof_name TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS shop_order_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            product_id INTEGER,
+            variant_id INTEGER,
+            product_name TEXT NOT NULL,
+            variant_label TEXT,
+            unit_price REAL NOT NULL,
+            qty INTEGER NOT NULL,
+            FOREIGN KEY (order_id) REFERENCES shop_orders (id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS photo_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             profile_id INTEGER NOT NULL,
@@ -423,6 +491,15 @@ def init_db():
         "primary_color": os.environ.get("PRIMARY_COLOR", "#0b5a44"),
         "secondary_color": os.environ.get("SECONDARY_COLOR", "#073e2f"),
         "accent_color": os.environ.get("ACCENT_COLOR", "#c9a86a"),
+        "theme_preset": "emerald_champagne",
+        "background_color": "#faf8f3",
+        "card_color": "#ffffff",
+        "text_color": "#262622",
+        "muted_color": "#6b7268",
+        "border_color": "#e6e1d6",
+        "font_heading": "Playfair Display",
+        "font_body": "Inter",
+        "font_button": "Inter",
         "hero_heading": "Find Your Life Partner With Trust, Haya &amp; Purpose",
         "hero_subheading": "A serious, privacy-first matrimonial service for meaningful Nikah connections.",
         "footer_text": "",
@@ -492,6 +569,16 @@ def inject_globals():
         primary_color=s.get("primary_color", "#0b5a44"),
         secondary_color=s.get("secondary_color", "#073e2f"),
         accent_color=s.get("accent_color", "#c9a86a"),
+        background_color=s.get("background_color", "#faf8f3"),
+        card_color=s.get("card_color", "#ffffff"),
+        text_color=s.get("text_color", "#262622"),
+        muted_color=s.get("muted_color", "#6b7268"),
+        border_color=s.get("border_color", "#e6e1d6"),
+        font_heading=s.get("font_heading", "Playfair Display"),
+        font_body=s.get("font_body", "Inter"),
+        font_button=s.get("font_button", "Inter"),
+        custom_fonts=list_custom_fonts(),
+        cart_count=cart_item_count(),
         hero_heading=s.get("hero_heading", ""),
         hero_subheading=s.get("hero_subheading", ""),
         footer_text=s.get("footer_text", ""),
@@ -504,6 +591,178 @@ def inject_globals():
         top_banners=active_banners("top"),
         current_year=datetime.now().year,
     )
+
+
+# ======================================================================
+# APPEARANCE / THEME ENGINE
+# ======================================================================
+THEME_PRESETS = {
+    "emerald_champagne": {
+        "label": "Emerald & Champagne",
+        "primary_color": "#0b5a44", "secondary_color": "#073e2f", "accent_color": "#c9a86a",
+        "background_color": "#faf8f3", "card_color": "#ffffff", "text_color": "#262622",
+        "muted_color": "#6b7268", "border_color": "#e6e1d6",
+    },
+    "midnight_gold": {
+        "label": "Midnight & Gold",
+        "primary_color": "#0d1321", "secondary_color": "#05070d", "accent_color": "#d4af37",
+        "background_color": "#0f1420", "card_color": "#161d2e", "text_color": "#f2efe6",
+        "muted_color": "#9aa2b5", "border_color": "#2a3348",
+    },
+    "burgundy_champagne": {
+        "label": "Burgundy & Champagne",
+        "primary_color": "#5c1a2b", "secondary_color": "#3c0f1c", "accent_color": "#d3b06a",
+        "background_color": "#fbf6ef", "card_color": "#ffffff", "text_color": "#2a1f22",
+        "muted_color": "#7a6b6c", "border_color": "#e9ddce",
+    },
+    "royal_plum": {
+        "label": "Royal Plum",
+        "primary_color": "#4a2545", "secondary_color": "#301930", "accent_color": "#b79a5e",
+        "background_color": "#faf7f6", "card_color": "#ffffff", "text_color": "#2b2230",
+        "muted_color": "#736a77", "border_color": "#e5dde3",
+    },
+    "olive_sand": {
+        "label": "Olive & Sand",
+        "primary_color": "#556b2f", "secondary_color": "#3a4a1f", "accent_color": "#a97142",
+        "background_color": "#faf6ee", "card_color": "#ffffff", "text_color": "#2c2a22",
+        "muted_color": "#736f5f", "border_color": "#e6ded0",
+    },
+}
+
+THEME_COLOR_KEYS = [
+    "primary_color", "secondary_color", "accent_color", "background_color",
+    "card_color", "text_color", "muted_color", "border_color",
+]
+
+WEB_SAFE_FONTS = ["Inter", "Playfair Display", "Poppins", "Lora", "Cormorant Garamond", "Georgia", "Montserrat"]
+FONT_DIR = os.path.join(BASE_DIR, "static", "fonts")
+os.makedirs(FONT_DIR, exist_ok=True)
+ALLOWED_FONT_EXT = {"woff2", "woff", "ttf"}
+MAX_FONT_BYTES = 5 * 1024 * 1024
+
+
+def _hex_to_rgb(hex_color):
+    h = (hex_color or "").strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        return None
+    try:
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def _relative_luminance(rgb):
+    def chan(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (chan(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(hex_a, hex_b):
+    """WCAG contrast ratio between two hex colors. Returns None if either is invalid."""
+    a, b = _hex_to_rgb(hex_a), _hex_to_rgb(hex_b)
+    if not a or not b:
+        return None
+    la, lb = _relative_luminance(a), _relative_luminance(b)
+    lighter, darker = max(la, lb), min(la, lb)
+    return round((lighter + 0.05) / (darker + 0.05), 2)
+
+
+def is_valid_hex(value):
+    return bool(re.fullmatch(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})", (value or "").strip()))
+
+
+def list_custom_fonts():
+    db = get_db()
+    return db.execute("SELECT * FROM custom_fonts ORDER BY label").fetchall()
+
+
+def slugify(text):
+    text = (text or "").strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return text or secrets.token_hex(4)
+
+
+def unique_slug(db, table, base_slug, exclude_id=None):
+    slug = base_slug
+    i = 2
+    while True:
+        q = f"SELECT id FROM {table} WHERE slug = ?"
+        params = [slug]
+        if exclude_id:
+            q += " AND id != ?"
+            params.append(exclude_id)
+        if not db.execute(q, params).fetchone():
+            return slug
+        slug = f"{base_slug}-{i}"
+        i += 1
+
+
+# ======================================================================
+# SHOP CART (session-based, guest checkout — no user accounts on this site)
+# ======================================================================
+def get_cart():
+    return session.get("cart", [])  # list of {product_id, variant_id, qty}
+
+
+def save_cart(cart):
+    session["cart"] = cart
+    session.modified = True
+
+
+def cart_item_count():
+    return sum(item.get("qty", 0) for item in get_cart())
+
+
+def cart_details(db):
+    """Resolve cart against live DB rows so price/stock is always current
+    (never trust anything cached in the session for money)."""
+    cart = get_cart()
+    items = []
+    total = 0.0
+    changed = False
+    kept = []
+    for entry in cart:
+        product = db.execute(
+            "SELECT * FROM shop_products WHERE id = ? AND status = 'active'",
+            (entry.get("product_id"),),
+        ).fetchone()
+        if not product:
+            changed = True
+            continue
+        variant = None
+        if entry.get("variant_id"):
+            variant = db.execute(
+                "SELECT * FROM shop_variants WHERE id = ? AND product_id = ?",
+                (entry["variant_id"], product["id"]),
+            ).fetchone()
+            if not variant:
+                changed = True
+                continue
+        available_stock = variant["stock"] if variant else product["stock"]
+        qty = max(1, min(int(entry.get("qty", 1)), max(available_stock, 0) or 1))
+        if qty != entry.get("qty"):
+            changed = True
+        if available_stock <= 0:
+            changed = True
+            continue
+        unit_price = product["discount_price"] or product["price"]
+        line_total = unit_price * qty
+        total += line_total
+        items.append({
+            "product": product,
+            "variant": variant,
+            "qty": qty,
+            "unit_price": unit_price,
+            "line_total": line_total,
+        })
+        kept.append({"product_id": product["id"], "variant_id": variant["id"] if variant else None, "qty": qty})
+    if changed:
+        save_cart(kept)
+    return items, round(total, 2)
 
 
 # ======================================================================
@@ -2820,6 +3079,149 @@ def admin_settings():
         return redirect(url_for("admin_settings"))
 
     return render_template("admin_settings.html", settings=load_settings())
+
+
+def save_font_file(file_storage):
+    if not file_storage or not file_storage.filename:
+        return None
+    ext = file_storage.filename.rsplit(".", 1)[-1].lower() if "." in file_storage.filename else ""
+    if ext not in ALLOWED_FONT_EXT:
+        raise ImageValidationError("Unsupported font file. Use WOFF2, WOFF or TTF.")
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size > MAX_FONT_BYTES:
+        raise ImageValidationError("Font file is too large (max 5 MB).")
+    if size == 0:
+        raise ImageValidationError("Empty font file.")
+    name = secrets.token_hex(12) + "." + ext
+    file_storage.save(os.path.join(FONT_DIR, name))
+    return name
+
+
+@app.route("/admin/settings/appearance", methods=["GET", "POST"])
+@admin_required
+def admin_appearance():
+    db = get_db()
+    if request.method == "POST":
+        action = request.form.get("action", "save_theme")
+
+        if action == "apply_preset":
+            preset_key = request.form.get("preset")
+            preset = THEME_PRESETS.get(preset_key)
+            if not preset:
+                flash("Unknown theme preset.", "error")
+                return redirect(url_for("admin_appearance"))
+            for key in THEME_COLOR_KEYS:
+                db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                           "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, preset[key]))
+            db.execute("INSERT INTO settings (key, value) VALUES ('theme_preset', ?) "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (preset_key,))
+            db.commit()
+            log_admin_action("apply_theme_preset", preset_key)
+            flash(f"Applied \"{preset['label']}\" theme to the whole site.", "success")
+            return redirect(url_for("admin_appearance"))
+
+        if action == "reset_theme":
+            preset = THEME_PRESETS["emerald_champagne"]
+            for key in THEME_COLOR_KEYS:
+                db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                           "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, preset[key]))
+            db.execute("INSERT INTO settings (key, value) VALUES ('theme_preset', 'emerald_champagne') "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            db.execute("INSERT INTO settings (key, value) VALUES ('font_heading', 'Playfair Display') "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            db.execute("INSERT INTO settings (key, value) VALUES ('font_body', 'Inter') "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            db.execute("INSERT INTO settings (key, value) VALUES ('font_button', 'Inter') "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            db.commit()
+            log_admin_action("reset_theme")
+            flash("Theme reset to default.", "success")
+            return redirect(url_for("admin_appearance"))
+
+        if action == "save_theme":
+            errors = []
+            values = {}
+            for key in THEME_COLOR_KEYS:
+                val = request.form.get(key, "").strip()
+                if not is_valid_hex(val):
+                    errors.append(f"{key.replace('_', ' ').title()} is not a valid hex color.")
+                    continue
+                values[key] = val
+            # Contrast safety: text-on-background and text-on-card must stay readable.
+            if "text_color" in values and "background_color" in values:
+                ratio = contrast_ratio(values["text_color"], values["background_color"])
+                if ratio is not None and ratio < 4.5:
+                    errors.append(f"Low contrast — Text Color on Background Color is only {ratio}:1 (need 4.5:1). Please choose another color.")
+            if "text_color" in values and "card_color" in values:
+                ratio = contrast_ratio(values["text_color"], values["card_color"])
+                if ratio is not None and ratio < 4.5:
+                    errors.append(f"Low contrast — Text Color on Card Color is only {ratio}:1 (need 4.5:1). Please choose another color.")
+            if errors:
+                for e in errors:
+                    flash(e, "error")
+                return redirect(url_for("admin_appearance"))
+
+            for key, val in values.items():
+                db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                           "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, val))
+            db.execute("INSERT INTO settings (key, value) VALUES ('theme_preset', 'custom') "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+
+            for key in ("font_heading", "font_body", "font_button"):
+                val = request.form.get(key, "").strip()[:120]
+                if val:
+                    db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                               "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, val))
+
+            db.commit()
+            log_admin_action("update_theme")
+            flash("Theme saved and applied to the whole site.", "success")
+            return redirect(url_for("admin_appearance"))
+
+        if action == "upload_font":
+            label = request.form.get("font_label", "").strip()[:80]
+            weight = request.form.get("font_weight", "400")
+            font_file = request.files.get("font_file")
+            if not label:
+                flash("Give the font a name first.", "error")
+                return redirect(url_for("admin_appearance"))
+            try:
+                name = save_font_file(font_file)
+                if not name:
+                    flash("Choose a font file to upload.", "error")
+                    return redirect(url_for("admin_appearance"))
+                db.execute(
+                    "INSERT INTO custom_fonts (label, filename, weight, created_at) VALUES (?, ?, ?, ?)",
+                    (label, name, weight, datetime.now().isoformat()),
+                )
+                db.commit()
+                log_admin_action("upload_font", label)
+                flash(f'Font "{label}" uploaded. Select it from the dropdown above.', "success")
+            except ImageValidationError as e:
+                flash(f"Font not uploaded: {e}", "error")
+            return redirect(url_for("admin_appearance"))
+
+        if action == "delete_font":
+            font_id = request.form.get("font_id")
+            row = db.execute("SELECT * FROM custom_fonts WHERE id = ?", (font_id,)).fetchone()
+            if row:
+                delete_file_quietly(FONT_DIR, row["filename"])
+                db.execute("DELETE FROM custom_fonts WHERE id = ?", (font_id,))
+                db.commit()
+                log_admin_action("delete_font", row["label"])
+                flash("Font removed.", "success")
+            return redirect(url_for("admin_appearance"))
+
+    settings = load_settings()
+    return render_template(
+        "admin_appearance.html",
+        settings=settings,
+        presets=THEME_PRESETS,
+        web_safe_fonts=WEB_SAFE_FONTS,
+        custom_fonts=list_custom_fonts(),
+    )
 
 
 # ======================================================================
