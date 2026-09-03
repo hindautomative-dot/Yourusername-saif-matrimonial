@@ -7,9 +7,12 @@
     <h1 class="section-title">Admin Dashboard</h1>
 
     <div class="stat-grid">
-        <div class="stat-card"><div class="num">{{ stats.total }}</div><div class="label">Total Profiles</div></div>
-        <div class="stat-card"><div class="num">{{ stats.active }}</div><div class="label">Active Profiles</div></div>
-        <div class="stat-card"><div class="num">{{ stats.hidden }}</div><div class="label">Hidden Profiles</div></div>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles') }}"><div class="num">{{ stats.total }}</div><div class="label">Total Profiles</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', source='self') }}"><div class="num">{{ stats.self_registered }}</div><div class="label">Self Registered</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', source='admin') }}"><div class="num">{{ stats.admin_registered }}</div><div class="label">Admin Registered</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', verified='yes') }}"><div class="num">{{ stats.verified_profiles }}</div><div class="label">Verified Profiles</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', status='active') }}"><div class="num">{{ stats.active }}</div><div class="label">Active Profiles</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', status='inactive') }}"><div class="num">{{ stats.hidden }}</div><div class="label">Inactive / Hidden</div></a>
         <div class="stat-card"><div class="num">{{ stats.pending }}</div><div class="label">Pending Requests</div></div>
         <div class="stat-card"><div class="num">{{ stats.unlocked }}</div><div class="label">Unlocked</div></div>
         <div class="stat-card"><div class="num">{{ stats.rejected }}</div><div class="label">Rejected</div></div>

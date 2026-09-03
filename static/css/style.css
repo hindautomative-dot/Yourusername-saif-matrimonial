@@ -687,3 +687,18 @@ th { background: #f3f0e6; color: var(--emerald-dark); font-size: 12.5px; text-tr
 /* ---------------- Scroll-reveal (progressive enhancement via IntersectionObserver in main.js) ---------------- */
 .reveal-init { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
 .reveal-init.revealed { opacity: 1; transform: translateY(0); }
+
+/* ---------------- Compatibility / match score badges ---------------- */
+.match-score-badge {
+    position: absolute; bottom: 6px; left: 6px; z-index: 3;
+    background: linear-gradient(160deg, var(--gold), #a9863f); color: #fff;
+    font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 10px;
+    box-shadow: 0 3px 8px rgba(0,0,0,.25);
+}
+.badge-match {
+    background: linear-gradient(160deg, #fff6e6, #fdecc8); color: #7a5a1e;
+    border: 1px solid var(--gold-soft); font-weight: 700;
+}
+
+.stat-card-link { display: block; text-decoration: none; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; cursor: pointer; }
+.stat-card-link:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(11,90,68,.1); border-color: var(--gold-soft); }

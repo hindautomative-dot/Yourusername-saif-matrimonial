@@ -17,6 +17,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from PIL import Image, ImageFilter, ImageOps, ImageDraw, ImageFont
 
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, HRFlowable
+)
+from reportlab.lib import colors as rl_colors
+from pypdf import PdfWriter, PdfReader
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+
 # ======================================================================
 # CONFIG
 # ======================================================================
@@ -369,6 +381,9 @@ def init_db():
         ("lifestyle_drinking", "TEXT"), ("lifestyle_smoking", "TEXT"),
         ("lifestyle_tobacco", "TEXT"), ("lifestyle_namaz", "TEXT"), ("lifestyle_roza", "TEXT"),
         ("declaration_accepted", "INTEGER"),
+        # Reliable, DB-stored record of how this profile entered the system —
+        # never inferred from the frontend. Set explicitly at insert time.
+        ("registration_source", "TEXT"),
     ]:
         _ensure_column(db, "profiles", col, coltype)
 
@@ -384,6 +399,13 @@ def init_db():
     # Viewer's declaration that the info won't be misused/screenshotted,
     # recorded at the moment they submit an unlock/package request.
     _ensure_column(db, "unlock_requests", "viewer_declaration", "INTEGER")
+
+    # Backfill: profiles created before this field existed. We can't know
+    # retroactively which ones came through self-registration, so we default
+    # them to "admin" (the original, only way profiles were created) — this
+    # is documented as a known limitation for historical data.
+    db.execute("UPDATE profiles SET registration_source = 'admin' WHERE registration_source IS NULL")
+    db.commit()
 
     defaults = {
         "brand_name": os.environ.get("BUSINESS_NAME", "Saif Matrimonial Services"),
@@ -737,6 +759,116 @@ def user_has_unlocked(db, profile_id, phone):
     ).fetchone()
 
 
+# ======================================================================
+# COMPATIBILITY / MATCH SCORE
+#
+# Deterministic, weighted, documented — NOT random. Compares two profile
+# rows and returns an integer 0-100. Weights are named constants so they
+# can be tuned later without touching the scoring logic itself.
+#
+# Architecture note: this site doesn't have full "user accounts" with
+# saved partner-preferences — viewers are just a verified phone number.
+# So the score is computed PROFILE vs PROFILE (the profile being viewed
+# vs. another profile), which is what actually exists in the data. If a
+# viewer's verified phone matches a profile they themselves registered
+# (see get_viewer_profile below), we personalise the score against THAT
+# profile instead — the closest honest equivalent of "viewer preferences"
+# this architecture supports.
+# ======================================================================
+SCORE_WEIGHTS = {
+    "age_gap": 20,          # closer age (within ~5 years) scores higher
+    "gender_complement": 15,  # opposite gender is the baseline expectation on a matrimonial site
+    "location": 15,          # same city > same state > different
+    "education": 15,         # same/similar education level
+    "profession": 10,        # same/related profession field
+    "hobbies": 15,           # shared hobbies (scales with overlap count)
+    "lifestyle": 10,          # similar answers on drinking/smoking/namaz/roza etc.
+}
+
+
+def _age_score(a, b):
+    try:
+        gap = abs(int(a) - int(b))
+    except (TypeError, ValueError):
+        return None
+    if gap <= 2: return 1.0
+    if gap <= 5: return 0.75
+    if gap <= 8: return 0.4
+    return 0.1
+
+
+def _text_match_score(a, b):
+    a = (a or "").strip().lower()
+    b = (b or "").strip().lower()
+    if not a or not b:
+        return None
+    if a == b:
+        return 1.0
+    if a in b or b in a:
+        return 0.6
+    return 0.15
+
+
+def _hobbies_overlap_score(a, b):
+    ha = {h.strip().lower() for h in (a or "").split(",") if h.strip()}
+    hb = {h.strip().lower() for h in (b or "").split(",") if h.strip()}
+    if not ha or not hb:
+        return None
+    overlap = len(ha & hb)
+    union = len(ha | hb) or 1
+    return overlap / union
+
+
+def _lifestyle_score(p1, p2):
+    fields = ["lifestyle_drinking", "lifestyle_smoking", "lifestyle_tobacco", "lifestyle_namaz", "lifestyle_roza"]
+    scored = []
+    for f in fields:
+        v1, v2 = (p1[f] or "").strip(), (p2[f] or "").strip()
+        if not v1 or not v2:
+            continue
+        scored.append(1.0 if v1 == v2 else 0.35)
+    if not scored:
+        return None
+    return sum(scored) / len(scored)
+
+
+def compute_compatibility_score(p1, p2):
+    """Returns an int 0-100. Missing fields are excluded from the
+    calculation entirely (weights re-normalised) rather than penalised —
+    a profile shouldn't score low just because a field is empty."""
+    components = {
+        "age_gap": _age_score(p1["age"], p2["age"]),
+        "gender_complement": (1.0 if (p1["gender"] or "") != (p2["gender"] or "") and p1["gender"] and p2["gender"] else (0.2 if p1["gender"] and p2["gender"] else None)),
+        "location": _text_match_score(p1["city"], p2["city"]),
+        "education": _text_match_score(p1["education"], p2["education"]),
+        "profession": _text_match_score(p1["profession"], p2["profession"]),
+        "hobbies": _hobbies_overlap_score(p1["hobbies"], p2["hobbies"]),
+        "lifestyle": _lifestyle_score(p1, p2),
+    }
+    total_weight = 0
+    weighted_sum = 0.0
+    for key, val in components.items():
+        if val is None:
+            continue
+        w = SCORE_WEIGHTS[key]
+        total_weight += w
+        weighted_sum += w * val
+    if total_weight == 0:
+        return None
+    return round((weighted_sum / total_weight) * 100)
+
+
+def get_viewer_profile(db, phone):
+    """Best-effort: does this verified phone belong to a profile already
+    in our system (self-registered or admin-added with this contact)?
+    Used only to personalise the match score — never assumed to exist."""
+    if not phone:
+        return None
+    return db.execute(
+        "SELECT * FROM profiles WHERE contact_number = ? AND is_active = 1 LIMIT 1", (phone,)
+    ).fetchone()
+
+
 def get_recommended_profiles(db, profile, limit=4):
     """'You might also like' — other active profiles ranked by how many
     hobbies they share with this one, then by same-city, then newest.
@@ -905,10 +1037,13 @@ def profile_preview(profile_code):
     already_unlocked = user_has_unlocked(db, profile["id"], verified_phone())
     selection = _package_selection()
     recommended = get_recommended_profiles(db, profile)
+    recommended_scored = [(rp, compute_compatibility_score(profile, rp)) for rp in recommended]
+    viewer_profile = get_viewer_profile(db, verified_phone())
+    match_score = compute_compatibility_score(viewer_profile, profile) if viewer_profile else None
     return render_template(
         "profile_preview.html", profile=profile, already_unlocked=already_unlocked,
         in_package=(profile_code in selection), package_selection=selection, package_size=_package_size(),
-        recommended=recommended,
+        recommended=recommended_scored, match_score=match_score,
     )
 
 
@@ -1246,7 +1381,9 @@ def profile_full(profile_code):
     if not unlocked:
         flash("This profile isn't unlocked for your verified number yet.", "error")
         return redirect(url_for("verify_access"))
-    return render_template("profile_full.html", profile=profile)
+    viewer_profile = get_viewer_profile(db, verified_phone())
+    match_score = compute_compatibility_score(viewer_profile, profile) if viewer_profile else None
+    return render_template("profile_full.html", profile=profile, match_score=match_score)
 
 
 @app.route("/profile/<profile_code>/request-more-photos", methods=["POST"])
@@ -1826,6 +1963,9 @@ def admin_dashboard():
         "reg_pending": db.execute("SELECT COUNT(*) c FROM self_registrations WHERE status='pending'").fetchone()["c"],
         "reg_total": db.execute("SELECT COUNT(*) c FROM self_registrations").fetchone()["c"],
         "photo_req_pending": db.execute("SELECT COUNT(*) c FROM photo_requests WHERE status='pending'").fetchone()["c"],
+        "self_registered": db.execute("SELECT COUNT(*) c FROM profiles WHERE registration_source='self'").fetchone()["c"],
+        "admin_registered": db.execute("SELECT COUNT(*) c FROM profiles WHERE registration_source='admin'").fetchone()["c"],
+        "verified_profiles": db.execute("SELECT COUNT(*) c FROM profiles WHERE admin_verified=1").fetchone()["c"],
     }
     recent_pending = db.execute(
         """
@@ -1842,19 +1982,382 @@ def admin_dashboard():
 # ======================================================================
 # ADMIN — PROFILES
 # ======================================================================
+# ======================================================================
+# PROFILE PDF / EXCEL EXPORT  (admin panel — Section 3 & 4 of the spec)
+# ======================================================================
+PROFILE_FIELD_LABELS = [
+    # (db_column, label) — used for both the PDF "Personal Details" table
+    # and is intentionally short: empty values are skipped everywhere.
+    ("age", "Age"), ("gender", "Gender"), ("marital_status", "Marital Status"),
+    ("height", "Height"), ("mother_tongue", "Mother Tongue"), ("city", "City"),
+    ("state", "State"), ("community", "Community"), ("sect", "Sect"),
+]
+PROFILE_CAREER_LABELS = [
+    ("education", "Education"), ("profession", "Profession"),
+    ("work_location", "Work Location"), ("income", "Income"),
+]
+PROFILE_LIFESTYLE_LABELS = [
+    ("lifestyle_drinking", "Drinking"), ("lifestyle_smoking", "Smoking"),
+    ("lifestyle_tobacco", "Gutkha / Tobacco"), ("lifestyle_namaz", "Namaz"),
+    ("lifestyle_roza", "Roza (Fasting)"),
+]
+
+
+def _pdf_styles():
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        "BiodataName", parent=styles["Title"], fontSize=22, textColor=rl_colors.HexColor("#073e2f"),
+        spaceAfter=2, alignment=TA_CENTER,
+    ))
+    styles.add(ParagraphStyle(
+        "BiodataCode", parent=styles["Normal"], fontSize=10, textColor=rl_colors.HexColor("#6b7268"),
+        alignment=TA_CENTER, spaceAfter=14,
+    ))
+    styles.add(ParagraphStyle(
+        "SectionHead", parent=styles["Heading2"], fontSize=13, textColor=rl_colors.HexColor("#0b5a44"),
+        spaceBefore=14, spaceAfter=6, borderPadding=0,
+    ))
+    styles.add(ParagraphStyle("BodyText2", parent=styles["Normal"], fontSize=10.5, leading=15))
+    return styles
+
+
+def _pdf_field_table(rows, styles):
+    """Only include rows whose value is non-empty — never prints N/A/null."""
+    data = [(r[0], r[1]) for r in rows if r[1]]
+    if not data:
+        return None
+    table_data = [[Paragraph(f"<b>{k}</b>", styles["BodyText2"]), Paragraph(str(v), styles["BodyText2"])] for k, v in data]
+    t = Table(table_data, colWidths=[42 * mm, 108 * mm])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, rl_colors.HexColor("#e6e1d6")),
+    ]))
+    return t
+
+
+def generate_profile_pdf_bytes(profile, business_name, brand_phone=""):
+    """Builds a premium-styled matrimonial biodata PDF for one profile and
+    returns it as BytesIO. Uses only real data from the DB row passed in —
+    empty fields are simply omitted, never shown as N/A/null/undefined."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4, topMargin=16 * mm, bottomMargin=16 * mm,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        title=f"{profile['name']} — {profile['profile_code']}",
+    )
+    styles = _pdf_styles()
+    story = []
+
+    story.append(Paragraph(business_name.upper(), ParagraphStyle(
+        "Brand", parent=styles["Normal"], fontSize=10, textColor=rl_colors.HexColor("#c9a86a"),
+        alignment=TA_CENTER, spaceAfter=10,
+    )))
+
+    # Photo (if present) — original photo, since this is an internal admin document
+    photo_path = os.path.join(PRIVATE_ORIGINALS_DIR, profile["photo_original_name"] or "")
+    if profile["photo_original_name"] and os.path.exists(photo_path):
+        try:
+            img = RLImage(photo_path, width=55 * mm, height=68 * mm)
+            img.hAlign = "CENTER"
+            story.append(img)
+            story.append(Spacer(1, 10))
+        except Exception:
+            pass
+
+    story.append(Paragraph(profile["name"] or "Profile", styles["BiodataName"]))
+    subtitle = f"{profile['profile_code']}"
+    if profile["age"]:
+        subtitle += f" &nbsp;·&nbsp; {profile['age']} yrs"
+    if profile["city"]:
+        subtitle += f" &nbsp;·&nbsp; {profile['city']}"
+    story.append(Paragraph(subtitle, styles["BiodataCode"]))
+    story.append(HRFlowable(width="100%", color=rl_colors.HexColor("#e8d9b8"), thickness=1))
+
+    if profile["bio"]:
+        story.append(Paragraph("About", styles["SectionHead"]))
+        story.append(Paragraph(profile["bio"], styles["BodyText2"]))
+
+    t = _pdf_field_table([(lbl, profile[col]) for col, lbl in PROFILE_FIELD_LABELS], styles)
+    if t:
+        story.append(Paragraph("Personal Details", styles["SectionHead"]))
+        story.append(t)
+
+    t = _pdf_field_table([(lbl, profile[col]) for col, lbl in PROFILE_CAREER_LABELS], styles)
+    if t:
+        story.append(Paragraph("Education & Career", styles["SectionHead"]))
+        story.append(t)
+
+    if profile["family_details"]:
+        story.append(Paragraph("Family Details", styles["SectionHead"]))
+        story.append(Paragraph(profile["family_details"], styles["BodyText2"]))
+
+    if profile["hobbies"]:
+        story.append(Paragraph("Hobbies & Interests", styles["SectionHead"]))
+        story.append(Paragraph(profile["hobbies"], styles["BodyText2"]))
+
+    t = _pdf_field_table([(lbl, profile[col]) for col, lbl in PROFILE_LIFESTYLE_LABELS], styles)
+    if t:
+        story.append(Paragraph("Lifestyle", styles["SectionHead"]))
+        story.append(t)
+
+    story.append(Paragraph("Contact", styles["SectionHead"]))
+    if profile["contact_visible"] and profile["contact_number"]:
+        story.append(Paragraph(f"Phone: {profile['contact_number']}", styles["BodyText2"]))
+    else:
+        contact_line = f"Please contact {business_name}"
+        if brand_phone:
+            contact_line += f" ({brand_phone})"
+        contact_line += " to get in touch regarding this profile."
+        story.append(Paragraph(contact_line, styles["BodyText2"]))
+
+    def _footer(canvas, doc_):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(rl_colors.HexColor("#6b7268"))
+        canvas.drawString(18 * mm, 10 * mm, f"Generated {datetime.now().strftime('%d %b %Y')} · {business_name}")
+        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Page {doc_.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    buf.seek(0)
+    return buf
+
+
+PROFILE_EXCEL_COLUMNS = [
+    ("profile_code", "Profile ID"), ("name", "Name"), ("gender", "Gender"), ("age", "Age"),
+    ("registration_source", "Registration Source"), ("created_at", "Registration Date"),
+    ("city", "City"), ("state", "State"), ("education", "Education"), ("profession", "Profession"),
+    ("hobbies", "Hobbies / Interests"), ("marital_status", "Marital Status"),
+    ("contact_number", "Contact Number"),
+]
+
+
+def generate_profiles_excel_bytes(profiles):
+    """Builds an Excel report. Deliberately excludes anything auth/security
+    related (there is none of that on the `profiles` row — no passwords or
+    tokens live on this table) and only includes the columns listed above."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Profiles"
+
+    header_fill = PatternFill(start_color="0B5A44", end_color="0B5A44", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    for col_idx, (_, label) in enumerate(PROFILE_EXCEL_COLUMNS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=label)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    for row_idx, p in enumerate(profiles, start=2):
+        for col_idx, (col, _) in enumerate(PROFILE_EXCEL_COLUMNS, start=1):
+            val = p[col]
+            if col == "created_at" and val:
+                val = str(val)[:10]
+            if col == "gender" and val is None:
+                val = ""
+            ws.cell(row=row_idx, column=col_idx, value=val if val is not None else "")
+
+    for col_idx, (col, label) in enumerate(PROFILE_EXCEL_COLUMNS, start=1):
+        width = max(14, min(38, len(label) + 6))
+        ws.column_dimensions[chr(64 + col_idx) if col_idx <= 26 else "A"].width = width
+
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+MAX_BULK_PDF_EXPORT = 150  # keeps bulk PDF generation from timing out the request
+
+
+def merge_profile_pdfs(profiles, business_name, brand_phone=""):
+    writer = PdfWriter()
+    for p in profiles:
+        single = generate_profile_pdf_bytes(p, business_name, brand_phone)
+        reader = PdfReader(single)
+        for page in reader.pages:
+            writer.add_page(page)
+    out = io.BytesIO()
+    writer.write(out)
+    out.seek(0)
+    return out
+
+
 @app.route("/admin/profiles")
 @admin_required
 def admin_profiles():
     db = get_db()
     q = request.args.get("q", "").strip()
+    gender = request.args.get("gender", "").strip()
+    city = request.args.get("city", "").strip()
+    education = request.args.get("education", "").strip()
+    profession = request.args.get("profession", "").strip()
+    source = request.args.get("source", "").strip()          # self / admin
+    status = request.args.get("status", "").strip()          # active / inactive
+    verified = request.args.get("verified", "").strip()      # yes / no
+    age_min = request.args.get("age_min", "").strip()
+    age_max = request.args.get("age_max", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    sort = request.args.get("sort", "newest")
+    page = max(1, request.args.get("page", 1, type=int) or 1)
+    per_page = 25
+
+    where = []
+    params = []
     if q:
+        where.append("(profile_code LIKE ? OR name LIKE ?)")
+        params += [f"%{q}%", f"%{q}%"]
+    if gender:
+        where.append("gender = ?"); params.append(gender)
+    if city:
+        where.append("city LIKE ?"); params.append(f"%{city}%")
+    if education:
+        where.append("education LIKE ?"); params.append(f"%{education}%")
+    if profession:
+        where.append("profession LIKE ?"); params.append(f"%{profession}%")
+    if source in ("self", "admin"):
+        where.append("registration_source = ?"); params.append(source)
+    if status == "active":
+        where.append("is_active = 1")
+    elif status == "inactive":
+        where.append("is_active = 0")
+    if verified == "yes":
+        where.append("admin_verified = 1")
+    elif verified == "no":
+        where.append("(admin_verified = 0 OR admin_verified IS NULL)")
+    if age_min.isdigit():
+        where.append("age >= ?"); params.append(int(age_min))
+    if age_max.isdigit():
+        where.append("age <= ?"); params.append(int(age_max))
+    if date_from:
+        where.append("created_at >= ?"); params.append(date_from)
+    if date_to:
+        where.append("created_at <= ?"); params.append(date_to + "T23:59:59")
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    sort_sql = {
+        "newest": "created_at DESC", "oldest": "created_at ASC",
+        "name": "name ASC", "age_asc": "age ASC", "age_desc": "age DESC",
+    }.get(sort, "created_at DESC")
+
+    total = db.execute(f"SELECT COUNT(*) c FROM profiles {where_sql}", params).fetchone()["c"]
+    total_pages = max(1, math.ceil(total / per_page))
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
+
+    profiles = db.execute(
+        f"SELECT * FROM profiles {where_sql} ORDER BY {sort_sql} LIMIT ? OFFSET ?",
+        params + [per_page, offset],
+    ).fetchall()
+
+    stats = {
+        "total": db.execute("SELECT COUNT(*) c FROM profiles").fetchone()["c"],
+        "self": db.execute("SELECT COUNT(*) c FROM profiles WHERE registration_source='self'").fetchone()["c"],
+        "admin": db.execute("SELECT COUNT(*) c FROM profiles WHERE registration_source='admin'").fetchone()["c"],
+        "verified": db.execute("SELECT COUNT(*) c FROM profiles WHERE admin_verified=1").fetchone()["c"],
+        "active": db.execute("SELECT COUNT(*) c FROM profiles WHERE is_active=1").fetchone()["c"],
+        "inactive": db.execute("SELECT COUNT(*) c FROM profiles WHERE is_active=0").fetchone()["c"],
+    }
+
+    filters = {
+        "q": q, "gender": gender, "city": city, "education": education, "profession": profession,
+        "source": source, "status": status, "verified": verified, "age_min": age_min, "age_max": age_max,
+        "date_from": date_from, "date_to": date_to, "sort": sort,
+    }
+    return render_template(
+        "admin_profiles.html", profiles=profiles, filters=filters, stats=stats,
+        page=page, total_pages=total_pages, total=total,
+    )
+
+
+@app.route("/admin/profiles/<int:profile_id>/pdf")
+@admin_required
+def admin_profile_pdf(profile_id):
+    db = get_db()
+    profile = db.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+    if not profile:
+        abort(404)
+    pdf_buf = generate_profile_pdf_bytes(
+        profile, get_setting("brand_name", "Matrimonial Services"), get_setting("brand_phone", "")
+    )
+    log_admin_action("profile_pdf_download", profile["profile_code"])
+    return send_file(
+        pdf_buf, mimetype="application/pdf", as_attachment=True,
+        download_name=f"{profile['profile_code']}_biodata.pdf",
+    )
+
+
+@app.route("/admin/profiles/export", methods=["POST"])
+@admin_required
+def admin_profiles_export():
+    """Bulk export — Excel or PDF — of either a specific selection of
+    profile IDs (checkboxes on the admin table) or 'all profiles matching
+    the current filters' (the querystring is resubmitted as a hidden field)."""
+    db = get_db()
+    fmt = request.form.get("format", "excel")
+    selected_ids = request.form.getlist("profile_ids")
+
+    if selected_ids:
+        placeholders = ",".join("?" for _ in selected_ids)
         profiles = db.execute(
-            "SELECT * FROM profiles WHERE profile_code LIKE ? OR name LIKE ? ORDER BY created_at DESC",
-            (f"%{q}%", f"%{q}%"),
+            f"SELECT * FROM profiles WHERE id IN ({placeholders}) ORDER BY created_at DESC",
+            [int(i) for i in selected_ids if i.isdigit()],
         ).fetchall()
     else:
-        profiles = db.execute("SELECT * FROM profiles ORDER BY created_at DESC").fetchall()
-    return render_template("admin_profiles.html", profiles=profiles, q=q)
+        # "Export all filtered" — re-run the same filter logic against the querystring
+        # that was active on the table (passed through as a hidden field).
+        qs = request.form.get("filter_querystring", "")
+        from urllib.parse import parse_qs
+        parsed = {k: v[0] for k, v in parse_qs(qs).items()}
+        where, params = [], []
+        if parsed.get("q"):
+            where.append("(profile_code LIKE ? OR name LIKE ?)"); params += [f"%{parsed['q']}%"] * 2
+        if parsed.get("gender"):
+            where.append("gender = ?"); params.append(parsed["gender"])
+        if parsed.get("city"):
+            where.append("city LIKE ?"); params.append(f"%{parsed['city']}%")
+        if parsed.get("source") in ("self", "admin"):
+            where.append("registration_source = ?"); params.append(parsed["source"])
+        if parsed.get("status") == "active":
+            where.append("is_active = 1")
+        elif parsed.get("status") == "inactive":
+            where.append("is_active = 0")
+        if parsed.get("verified") == "yes":
+            where.append("admin_verified = 1")
+        elif parsed.get("verified") == "no":
+            where.append("(admin_verified = 0 OR admin_verified IS NULL)")
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        profiles = db.execute(f"SELECT * FROM profiles {where_sql} ORDER BY created_at DESC", params).fetchall()
+
+    if not profiles:
+        flash("No profiles matched your selection/filters to export.", "error")
+        return redirect(url_for("admin_profiles"))
+
+    log_admin_action(f"bulk_export_{fmt}", f"{len(profiles)} profiles")
+
+    if fmt == "excel":
+        buf = generate_profiles_excel_bytes(profiles)
+        return send_file(
+            buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True, download_name=f"profiles_export_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        )
+
+    # PDF
+    if len(profiles) > MAX_BULK_PDF_EXPORT:
+        flash(
+            f"That's {len(profiles)} profiles — bulk PDF export is capped at {MAX_BULK_PDF_EXPORT} "
+            f"at a time to avoid timing out. Please narrow your filters and try again.", "error",
+        )
+        return redirect(url_for("admin_profiles"))
+    buf = merge_profile_pdfs(profiles, get_setting("brand_name", "Matrimonial Services"), get_setting("brand_phone", ""))
+    return send_file(
+        buf, mimetype="application/pdf", as_attachment=True,
+        download_name=f"profiles_biodata_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+    )
 
 
 def _profile_form_fields():
@@ -1928,9 +2431,9 @@ def admin_add_profile():
              community, sect, mother_tongue, height, income, work_location, family_details, bio,
              contact_number, contact_visible, admin_verified, phone_verified, photo_reviewed,
              hobbies, lifestyle_drinking, lifestyle_smoking, lifestyle_tobacco, lifestyle_namaz,
-             lifestyle_roza, declaration_accepted,
+             lifestyle_roza, declaration_accepted, registration_source,
              photo_original_name, photo_preview_name, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'admin', ?, ?, 1, ?)
             """,
             (
                 profile_code, f["name"], age, f["gender"], f["city"], f["state"], f["marital_status"],
@@ -2179,9 +2682,9 @@ def admin_decide_registration(reg_id, action):
         (profile_code, name, age, gender, city, marital_status, education, profession,
          bio, contact_number, contact_visible, admin_verified, phone_verified, photo_reviewed,
          hobbies, lifestyle_drinking, lifestyle_smoking, lifestyle_tobacco, lifestyle_namaz,
-         lifestyle_roza, declaration_accepted,
+         lifestyle_roza, declaration_accepted, registration_source,
          photo_original_name, photo_preview_name, is_active, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, 'self', ?, ?, 1, ?)
         """,
         (profile_code, row["name"], row["age"], row["gender"], row["city"], row["marital_status"],
          row["education"], row["profession"], row["bio"], row["phone"],

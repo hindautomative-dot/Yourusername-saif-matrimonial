@@ -18,6 +18,7 @@
             {% if profile.admin_verified %}<span class="badge badge-verified">Admin Reviewed</span>{% endif %}
             {% if profile.phone_verified %}<span class="badge badge-mini">Phone Verified</span>{% endif %}
             {% if profile.photo_reviewed %}<span class="badge badge-mini">Photo Reviewed</span>{% endif %}
+            {% if match_score is not none %}<span class="badge badge-match">✨ {{ match_score }}% Match with your profile</span>{% endif %}
         </div>
 
         <h3 class="section-label">Basic Details</h3>

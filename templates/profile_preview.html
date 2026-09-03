@@ -25,6 +25,7 @@
             {% if profile.admin_verified %}<span class="badge badge-verified">Admin Reviewed</span>{% endif %}
             {% if profile.phone_verified %}<span class="badge badge-mini">Phone Verified</span>{% endif %}
             {% if profile.photo_reviewed %}<span class="badge badge-mini">Photo Reviewed</span>{% endif %}
+            {% if match_score is not none %}<span class="badge badge-match">✨ {{ match_score }}% Match with your profile</span>{% endif %}
         </div>
         <div class="profile-meta" style="font-size:15px; line-height:2;">
             🎂 Age: {{ profile.age }} &nbsp;|&nbsp; ⚧ {{ profile.gender }}<br>
@@ -77,13 +78,14 @@
         <h3 class="section-label" style="border-top:0; padding-top:0; margin-top:0;">You Might Also Like</h3>
         <p class="helptext mt-0" style="margin-bottom:14px;">Similar hobbies or location to this profile.</p>
         <div class="profile-grid" style="grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));">
-            {% for rp in recommended %}
+            {% for rp, rscore in recommended %}
             <a class="profile-card" href="{{ url_for('profile_preview', profile_code=rp.profile_code) }}">
                 <div class="profile-photo" style="height:150px;">
                     {% if rp.photo_preview_name %}
                     <img src="{{ url_for('profile_preview_image', profile_code=rp.profile_code) }}" alt="Profile preview">
                     {% endif %}
                     {% if rp.admin_verified %}<span class="verified-tick verified-tick-sm" title="Admin Verified">✔</span>{% endif %}
+                    {% if rscore is not none %}<span class="match-score-badge">{{ rscore }}% Match</span>{% endif %}
                 </div>
                 <div class="profile-body" style="padding:10px;">
                     <div class="profile-code" style="font-size:12.5px;">{{ rp.profile_code }}</div>

@@ -6,52 +6,156 @@
 <section class="container">
     <h1 class="section-title">Manage Profiles</h1>
 
-    <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-bottom:20px;">
-        <a class="btn btn-primary" href="{{ url_for('admin_add_profile') }}">+ Add New Profile</a>
-        <form method="GET" style="display:flex; gap:8px;">
-            <input type="text" name="q" placeholder="Search by code or name" value="{{ q }}" style="margin:0;">
-            <button class="btn btn-outline btn-sm" type="submit">Search</button>
-        </form>
+    <div class="stat-grid" style="margin-bottom:22px;">
+        <div class="stat-card"><div class="num">{{ stats.total }}</div><div class="label">Total</div></div>
+        <div class="stat-card"><div class="num">{{ stats.self }}</div><div class="label">Self Registered</div></div>
+        <div class="stat-card"><div class="num">{{ stats.admin }}</div><div class="label">Admin Registered</div></div>
+        <div class="stat-card"><div class="num">{{ stats.verified }}</div><div class="label">Verified</div></div>
+        <div class="stat-card"><div class="num">{{ stats.active }}</div><div class="label">Active</div></div>
+        <div class="stat-card"><div class="num">{{ stats.inactive }}</div><div class="label">Inactive</div></div>
     </div>
 
-    {% if profiles %}
-    <div class="table-wrap">
-        <table>
-            <tr><th>Code</th><th>Name</th><th>Age</th><th>City</th><th>Status</th><th>Badges</th><th>Actions</th></tr>
-            {% for p in profiles %}
-            <tr>
-                <td>{{ p.profile_code }}</td>
-                <td>{{ p.name }}</td>
-                <td>{{ p.age }}</td>
-                <td>{{ p.city }}</td>
-                <td>{{ "Active" if p.is_active else "Hidden" }}</td>
-                <td>
-                    {% if p.admin_verified %}<span class="badge badge-mini">Admin</span>{% endif %}
-                    {% if p.phone_verified %}<span class="badge badge-mini">Phone</span>{% endif %}
-                    {% if p.photo_reviewed %}<span class="badge badge-mini">Photo</span>{% endif %}
-                </td>
-                <td style="display:flex; gap:6px; flex-wrap:wrap;">
-                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_edit_profile', profile_id=p.id) }}">Edit</a>
-                    <form method="POST" action="{{ url_for('admin_toggle_profile', profile_id=p.id) }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="btn btn-sm btn-outline" type="submit">{{ "Hide" if p.is_active else "Show" }}</button>
-                    </form>
-                    <form method="POST" action="{{ url_for('admin_delete_profile', profile_id=p.id) }}"
-                          onsubmit="return confirm('Delete this profile permanently? This cannot be undone.');">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="btn btn-sm btn-danger" type="submit">Delete</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
+    <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+        <a class="btn btn-primary" href="{{ url_for('admin_add_profile') }}">+ Add New Profile</a>
     </div>
+
+    <!-- Filters -->
+    <form method="GET" class="card" style="margin-bottom:20px; padding:18px;" id="filterForm">
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px;">
+            <input type="text" name="q" placeholder="Search code / name" value="{{ filters.q }}">
+            <select name="gender">
+                <option value="">Any Gender</option>
+                <option value="Male" {{ 'selected' if filters.gender=='Male' }}>Male</option>
+                <option value="Female" {{ 'selected' if filters.gender=='Female' }}>Female</option>
+            </select>
+            <input type="text" name="city" placeholder="City" value="{{ filters.city }}">
+            <input type="text" name="education" placeholder="Education" value="{{ filters.education }}">
+            <input type="text" name="profession" placeholder="Profession" value="{{ filters.profession }}">
+            <select name="source">
+                <option value="">Any Source</option>
+                <option value="self" {{ 'selected' if filters.source=='self' }}>Self Registered</option>
+                <option value="admin" {{ 'selected' if filters.source=='admin' }}>Admin Registered</option>
+            </select>
+            <select name="status">
+                <option value="">Any Status</option>
+                <option value="active" {{ 'selected' if filters.status=='active' }}>Active</option>
+                <option value="inactive" {{ 'selected' if filters.status=='inactive' }}>Inactive</option>
+            </select>
+            <select name="verified">
+                <option value="">Verified?</option>
+                <option value="yes" {{ 'selected' if filters.verified=='yes' }}>Verified only</option>
+                <option value="no" {{ 'selected' if filters.verified=='no' }}>Not verified</option>
+            </select>
+            <input type="number" name="age_min" placeholder="Age min" value="{{ filters.age_min }}">
+            <input type="number" name="age_max" placeholder="Age max" value="{{ filters.age_max }}">
+            <input type="date" name="date_from" value="{{ filters.date_from }}" title="Registered from">
+            <input type="date" name="date_to" value="{{ filters.date_to }}" title="Registered to">
+            <select name="sort">
+                <option value="newest" {{ 'selected' if filters.sort=='newest' }}>Newest first</option>
+                <option value="oldest" {{ 'selected' if filters.sort=='oldest' }}>Oldest first</option>
+                <option value="name" {{ 'selected' if filters.sort=='name' }}>Name A-Z</option>
+                <option value="age_asc" {{ 'selected' if filters.sort=='age_asc' }}>Age (low-high)</option>
+                <option value="age_desc" {{ 'selected' if filters.sort=='age_desc' }}>Age (high-low)</option>
+            </select>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:12px;">
+            <button class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+            <a class="btn btn-outline btn-sm" href="{{ url_for('admin_profiles') }}">Reset</a>
+        </div>
+    </form>
+
+    {% if profiles %}
+    <form method="POST" action="{{ url_for('admin_profiles_export') }}" id="exportForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="filter_querystring" value="{{ request.query_string.decode() }}">
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+            <label class="checkbox-row" style="margin:0;">
+                <input type="checkbox" id="selectAll">
+                <span>Select all on this page</span>
+            </label>
+            <button class="btn btn-outline btn-sm" type="submit" name="format" value="excel">Export Excel (selected, or all filtered if none selected)</button>
+            <button class="btn btn-outline btn-sm" type="submit" name="format" value="pdf">Export PDF (selected, or all filtered if none selected)</button>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <tr>
+                    <th></th><th>Code</th><th>Name</th><th>Age</th><th>City</th><th>Source</th><th>Status</th><th>Badges</th><th>Actions</th>
+                </tr>
+                {% for p in profiles %}
+                <tr>
+                    <td><input type="checkbox" name="profile_ids" value="{{ p.id }}" class="rowCheck"></td>
+                    <td>{{ p.profile_code }}</td>
+                    <td>{{ p.name }}</td>
+                    <td>{{ p.age }}</td>
+                    <td>{{ p.city }}</td>
+                    <td>{% if p.registration_source == 'self' %}<span class="badge badge-mini">Self</span>{% else %}<span class="badge badge-mini">Admin</span>{% endif %}</td>
+                    <td>{{ "Active" if p.is_active else "Hidden" }}</td>
+                    <td>
+                        {% if p.admin_verified %}<span class="badge badge-mini">Verified</span>{% endif %}
+                        {% if p.phone_verified %}<span class="badge badge-mini">Phone</span>{% endif %}
+                        {% if p.photo_reviewed %}<span class="badge badge-mini">Photo</span>{% endif %}
+                    </td>
+                    <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                        <a class="btn btn-sm btn-outline" href="{{ url_for('admin_edit_profile', profile_id=p.id) }}">Edit</a>
+                        <a class="btn btn-sm btn-outline" href="{{ url_for('admin_profile_pdf', profile_id=p.id) }}">PDF</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </form>
+
+    {% if total_pages > 1 %}
+    <div style="display:flex; gap:8px; justify-content:center; margin-top:18px; flex-wrap:wrap;">
+        {% for pnum in range(1, total_pages + 1) %}
+        <a class="btn btn-sm {{ 'btn-primary' if pnum == page else 'btn-outline' }}"
+           href="{{ url_for('admin_profiles', page=pnum, **filters) }}">{{ pnum }}</a>
+        {% endfor %}
+    </div>
+    <p class="muted" style="text-align:center; font-size:12.5px; margin-top:8px;">{{ total }} profile(s) total</p>
+    {% endif %}
+
+    <!-- Row-level actions (hide/show/delete) kept separate below for clarity -->
+    <details style="margin-top:24px;">
+        <summary class="muted" style="cursor:pointer; font-size:13px;">Show/Hide/Delete actions</summary>
+        <div class="table-wrap" style="margin-top:10px;">
+            <table>
+                <tr><th>Code</th><th>Name</th><th>Actions</th></tr>
+                {% for p in profiles %}
+                <tr>
+                    <td>{{ p.profile_code }}</td>
+                    <td>{{ p.name }}</td>
+                    <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                        <form method="POST" action="{{ url_for('admin_toggle_profile', profile_id=p.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-sm btn-outline" type="submit">{{ "Hide" if p.is_active else "Show" }}</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('admin_delete_profile', profile_id=p.id) }}"
+                              onsubmit="return confirm('Delete this profile permanently? This cannot be undone.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </details>
+
     {% else %}
     <div class="empty-state">
         <div class="icon">🗂️</div>
-        <p>No profiles found.</p>
+        <p>No profiles found for these filters.</p>
     </div>
     {% endif %}
 </section>
+
+<script>
+document.getElementById("selectAll") && document.getElementById("selectAll").addEventListener("change", function () {
+    document.querySelectorAll(".rowCheck").forEach(cb => cb.checked = this.checked);
+});
+</script>
 
 {% endblock %}
