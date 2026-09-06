@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Order {{ order.order_code }} — Admin{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<section class="container-narrow">
+    <a class="btn btn-outline btn-sm" href="{{ url_for('admin_shop_orders') }}" style="margin-bottom:16px; display:inline-block;">← Back to Orders</a>
+    <h1 class="section-title">Order {{ order.order_code }}</h1>
+
+    <div class="card">
+        <h3 class="section-label">Customer</h3>
+        <p>{{ order.customer_name }} — {{ order.customer_phone }}</p>
+        <p class="muted" style="white-space:pre-wrap;">{{ order.customer_address }}</p>
+
+        <h3 class="section-label">Items</h3>
+        <div class="table-wrap">
+            <table>
+                <tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
+                {% for item in items %}
+                <tr>
+                    <td>{{ item.product_name }}{% if item.variant_label %} ({{ item.variant_label }}){% endif %}</td>
+                    <td>{{ item.qty }}</td>
+                    <td>₹{{ '%.0f'|format(item.unit_price) }}</td>
+                    <td>₹{{ '%.0f'|format(item.unit_price * item.qty) }}</td>
+                </tr>
+                {% endfor %}
+                <tr><td colspan="3" style="text-align:right; font-weight:700;">Total</td><td style="font-weight:700;">₹{{ '%.0f'|format(order.total_amount) }}</td></tr>
+            </table>
+        </div>
+
+        {% if order.payment_proof_name %}
+        <h3 class="section-label">Payment Proof</h3>
+        <a href="{{ url_for('admin_shop_payment_proof', order_id=order.id) }}" target="_blank">
+            <img src="{{ url_for('admin_shop_payment_proof', order_id=order.id) }}" style="max-width:260px; border-radius:10px; border:1px solid var(--line);">
+        </a>
+        {% endif %}
+
+        <h3 class="section-label">Update Status</h3>
+        <form method="post" action="{{ url_for('admin_shop_order_update', order_id=order.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div style="display:flex; gap:14px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:160px;">
+                    <label>Order Status</label>
+                    <select name="order_status">
+                        {% for s in order_statuses %}<option value="{{ s }}" {{ 'selected' if order.order_status == s }}>{{ s|capitalize }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div style="flex:1; min-width:160px;">
+                    <label>Payment Status</label>
+                    <select name="payment_status">
+                        {% for s in payment_statuses %}<option value="{{ s }}" {{ 'selected' if order.payment_status == s }}>{{ s|capitalize }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="helptext">Marking as "Cancelled" automatically restores reserved stock.</div>
+            <button class="btn btn-primary" type="submit" style="margin-top:14px;">Update Order</button>
+        </form>
+    </div>
+</section>
+{% endblock %}

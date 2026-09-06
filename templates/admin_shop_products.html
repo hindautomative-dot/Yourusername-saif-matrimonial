@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Shop Products — Admin{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<section class="container">
+    <h1 class="section-title">Shop Products</h1>
+    <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_dashboard') }}">← Dashboard</a>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_shop_categories') }}">Categories</a>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_shop_orders') }}">Orders</a>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('admin_shop_product_add') }}">+ Add Product</a>
+    </div>
+
+    <form method="get" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Search products…" class="input" style="max-width:220px;">
+        <select name="category" class="input" style="max-width:180px;">
+            <option value="">All categories</option>
+            {% for c in categories %}<option value="{{ c.id }}" {{ 'selected' if cat_id == c.id }}>{{ c.name }}</option>{% endfor %}
+        </select>
+        <select name="status" class="input" style="max-width:160px;">
+            <option value="">Any status</option>
+            <option value="active" {{ 'selected' if status == 'active' }}>Active</option>
+            <option value="inactive" {{ 'selected' if status == 'inactive' }}>Inactive</option>
+        </select>
+        <button class="btn btn-outline btn-sm" type="submit">Filter</button>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_shop_products') }}">Reset</a>
+    </form>
+
+    <div class="table-wrap">
+        <table>
+            <tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Featured</th><th></th></tr>
+            {% for p in products %}
+            <tr>
+                <td>{{ p.name }}</td>
+                <td>{{ p.category_name or '—' }}</td>
+                <td>
+                    {% if p.discount_price %}₹{{ '%.0f'|format(p.discount_price) }} <span class="muted" style="text-decoration:line-through;">₹{{ '%.0f'|format(p.price) }}</span>
+                    {% else %}₹{{ '%.0f'|format(p.price) }}{% endif %}
+                </td>
+                <td>{{ 'Variants' if p.has_variants else p.stock }}</td>
+                <td><span class="badge {{ 'badge-unlocked' if p.status == 'active' else 'badge-rejected' }}">{{ p.status }}</span></td>
+                <td>{{ '⭐' if p.featured else '—' }}</td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_shop_product_edit', product_id=p.id) }}">Edit</a>
+                    <form method="post" action="{{ url_for('admin_shop_product_toggle', product_id=p.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-outline" type="submit">{{ 'Deactivate' if p.status=='active' else 'Activate' }}</button>
+                    </form>
+                    <form method="post" action="{{ url_for('admin_shop_product_delete', product_id=p.id) }}" onsubmit="return confirm('Delete this product permanently?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="muted">No products found.</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+</section>
+{% endblock %}

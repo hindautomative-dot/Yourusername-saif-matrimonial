@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Order {{ order.order_code }} — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card center">
+        <span class="loading-heart" style="display:inline-block; margin-bottom:10px;"><svg viewBox="0 0 64 40" width="40" height="26"><use href="#heartDuoIcon"/></svg></span>
+        <h2 class="serif" style="color:var(--emerald-dark); margin:0 0 6px;">Order Submitted!</h2>
+        <p class="muted" style="font-size:14px;">Order Code: <b>{{ order.order_code }}</b></p>
+
+        {% if order.order_status == 'cancelled' %}
+        <div class="order-status-timeline" style="justify-content:center;">
+            <span class="order-status-step" style="background:var(--danger-bg); color:var(--danger);">Cancelled</span>
+        </div>
+        {% else %}
+        <div class="order-status-timeline" style="justify-content:center;">
+            {% for s in ['pending','confirmed','processing','shipped','delivered'] %}
+            <span class="order-status-step {{ 'current' if order.order_status == s else ('done' if ['pending','confirmed','processing','shipped','delivered'].index(order.order_status) > loop.index0 else '') }}">{{ s|capitalize }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <p style="font-size:14px; margin-top:14px;">Payment Status: <b>{{ order.payment_status|capitalize }}</b></p>
+        <p class="muted" style="font-size:13px;">We'll verify your payment and update the status shortly. Save this link/order code to check back later.</p>
+
+        <div class="table-wrap" style="margin:18px 0; text-align:left;">
+            <table>
+                <tr><th>Item</th><th>Qty</th><th>Total</th></tr>
+                {% for item in items %}
+                <tr>
+                    <td>{{ item.product_name }}{% if item.variant_label %} ({{ item.variant_label }}){% endif %}</td>
+                    <td>{{ item.qty }}</td>
+                    <td>₹{{ '%.0f'|format(item.unit_price * item.qty) }}</td>
+                </tr>
+                {% endfor %}
+                <tr><td colspan="2" style="text-align:right; font-weight:700;">Total</td><td style="font-weight:700;">₹{{ '%.0f'|format(order.total_amount) }}</td></tr>
+            </table>
+        </div>
+
+        <a class="btn btn-primary" href="{{ url_for('shop_index') }}">Continue Shopping</a>
+    </div>
+</section>
+{% endblock %}

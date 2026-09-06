@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }} — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container">
+    <p class="muted" style="font-size:13px; margin-bottom:16px;">
+        <a href="{{ url_for('shop_index') }}">Shop</a>
+        {% if product.category_slug %} / <a href="{{ url_for('shop_index', category=product.category_slug) }}">{{ product.category_name }}</a>{% endif %}
+        / {{ product.name }}
+    </p>
+
+    <div class="product-detail-grid">
+        <div>
+            {% set imgs = (product.images or '').split(',') | select | list %}
+            <div class="product-gallery-main">
+                {% if imgs %}
+                <img id="mainProductImg" src="{{ url_for('static', filename='shop/' + imgs[0]) }}" alt="{{ product.name }}">
+                {% else %}
+                <div class="no-image" style="height:100%;">No image yet</div>
+                {% endif %}
+            </div>
+            {% if imgs|length > 1 %}
+            <div class="product-gallery-thumbs">
+                {% for img in imgs %}
+                <img src="{{ url_for('static', filename='shop/' + img) }}" class="{{ 'active' if loop.first }}" onclick="document.getElementById('mainProductImg').src=this.src; document.querySelectorAll('.product-gallery-thumbs img').forEach(i=>i.classList.remove('active')); this.classList.add('active');">
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <div>
+            {% if product.category_name %}<span class="product-cat">{{ product.category_name }}</span>{% endif %}
+            <h1 style="margin:6px 0 10px;">{{ product.name }}</h1>
+            <div class="product-price-row" style="margin-bottom:14px;">
+                {% if product.discount_price %}
+                <span class="product-price" style="font-size:24px;">₹{{ '%.0f'|format(product.discount_price) }}</span>
+                <span class="product-price-old" style="font-size:16px;">₹{{ '%.0f'|format(product.price) }}</span>
+                {% else %}
+                <span class="product-price" style="font-size:24px;">₹{{ '%.0f'|format(product.price) }}</span>
+                {% endif %}
+            </div>
+
+            {% if product.description %}
+            <p style="font-size:14.5px; line-height:1.7; color:var(--charcoal);">{{ product.description }}</p>
+            {% endif %}
+
+            <form method="post" action="{{ url_for('shop_cart_add') }}" id="addToCartForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="product_id" value="{{ product.id }}">
+
+                {% if variants %}
+                <input type="hidden" name="variant_id" id="selectedVariantId" required>
+                <div style="margin:14px 0;">
+                    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:6px;">Choose an option</label>
+                    <div class="variant-chip-row">
+                        {% for v in variants %}
+                        <span class="variant-chip {{ 'out' if v.stock <= 0 }}" data-vid="{{ v.id }}"
+                              onclick="{% if v.stock > 0 %}selectVariant(this){% endif %}">
+                            {{ v.size or '' }}{% if v.size and v.color %} / {% endif %}{{ v.color or '' }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="cart-qty-box" style="margin:14px 0;">
+                    <label style="font-size:13px; font-weight:600;">Qty</label>
+                    <input type="number" name="qty" value="1" min="1" max="20">
+                </div>
+
+                {% if (product.stock > 0 and not product.has_variants) or product.has_variants %}
+                <button class="btn btn-primary btn-block" type="submit">
+                    <span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span>
+                    <span class="btn-label">Add to Cart</span>
+                </button>
+                {% else %}
+                <button class="btn btn-outline btn-block" type="button" disabled>Out of Stock</button>
+                {% endif %}
+            </form>
+
+            <div style="margin-top:20px; display:flex; gap:16px; font-size:12.5px; color:var(--muted); flex-wrap:wrap;">
+                <span>✓ Secure checkout</span>
+                <span>✓ Manual payment verification</span>
+                <span>✓ Cash-on-verification style UPI payment</span>
+            </div>
+        </div>
+    </div>
+
+    {% if related %}
+    <h2 class="section-title" style="font-size:19px; margin-top:44px;">You may also like</h2>
+    <div class="product-grid">
+        {% for p in related %}{% include "_product_card.html" %}{% endfor %}
+    </div>
+    {% endif %}
+</section>
+
+<script>
+function selectVariant(el){
+    document.querySelectorAll('.variant-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('selectedVariantId').value = el.dataset.vid;
+}
+document.getElementById('addToCartForm').addEventListener('submit', function(e){
+    var hasVariants = {{ 'true' if variants else 'false' }};
+    if (hasVariants && !document.getElementById('selectedVariantId').value) {
+        e.preventDefault();
+        alert('Please choose an option before adding to cart.');
+    }
+});
+</script>
+{% endblock %}

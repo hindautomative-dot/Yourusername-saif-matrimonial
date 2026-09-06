@@ -122,7 +122,31 @@ def send_raw_sms(phone, message):
 
 
 def send_otp_sms(phone, code):
-    return send_raw_sms(phone, f"Your OTP is {code}. It expires in {OTP_TTL_MINUTES} minutes. Do not share this with anyone.")
+    """OTP delivery gets its own path (rather than reusing send_raw_sms) because
+    Fast2SMS's DLT-free 'otp' route only accepts a bare numeric code — it renders
+    its own fixed template server-side and rejects a free-text message. Every
+    other provider/message still goes through send_raw_sms with full text."""
+    message = f"Your OTP is {code}. It expires in {OTP_TTL_MINUTES} minutes. Do not share this with anyone."
+    if OTP_PROVIDER == "fast2sms":
+        api_key = os.environ.get("FAST2SMS_API_KEY")
+        if not api_key:
+            app.logger.error("[SMS] FAST2SMS_API_KEY not set")
+            app.logger.warning(f"[DEV SMS] To {phone}: {message}")
+            return False, "FAST2SMS_API_KEY not set"
+        try:
+            import requests
+            r = requests.post(
+                "https://www.fast2sms.com/dev/bulkV2",
+                headers={"authorization": api_key},
+                data={"route": "otp", "variables_values": code, "numbers": phone},
+                timeout=10,
+            )
+            return r.ok, r.text
+        except Exception as e:
+            app.logger.error(f"[SMS] OTP delivery failed via fast2sms: {e}")
+            app.logger.warning(f"[DEV SMS] To {phone}: {message}")
+            return False, str(e)
+    return send_raw_sms(phone, message)
 
 
 # ----------------------------------------------------------------------
@@ -2849,6 +2873,18 @@ def admin_payment_proof(request_id):
     return resp
 
 
+@app.route("/admin/shop/orders/<int:order_id>/payment-proof")
+@admin_required
+def admin_shop_payment_proof(order_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM shop_orders WHERE id = ?", (order_id,)).fetchone()
+    if not row or not row["payment_proof_name"]:
+        abort(404)
+    resp = send_from_directory(PRIVATE_PROOFS_DIR, row["payment_proof_name"])
+    resp.headers["Cache-Control"] = "no-store, private"
+    return resp
+
+
 @app.route("/admin/requests/<int:request_id>/<action>", methods=["POST"])
 @admin_required
 def admin_decide_request(request_id, action):
@@ -3296,6 +3332,551 @@ def admin_delete_banner(banner_id):
         log_admin_action("delete_banner", str(banner_id))
         flash("Banner deleted.", "success")
     return redirect(url_for("admin_banners"))
+
+
+# ======================================================================
+# ISLAMIC SHOP — PUBLIC FRONTEND
+# ======================================================================
+SHOP_IMAGES_DIR = os.path.join(BASE_DIR, "static", "shop")
+os.makedirs(SHOP_IMAGES_DIR, exist_ok=True)
+
+
+def shop_categories_list(db):
+    return db.execute("SELECT * FROM shop_categories ORDER BY sort_order, name").fetchall()
+
+
+@app.route("/shop")
+def shop_index():
+    db = get_db()
+    categories = shop_categories_list(db)
+    featured = db.execute(
+        "SELECT * FROM shop_products WHERE status = 'active' AND featured = 1 ORDER BY updated_at DESC LIMIT 8"
+    ).fetchall()
+    cat_slug = request.args.get("category", "").strip()
+    q = request.args.get("q", "").strip()
+
+    query = "SELECT p.*, c.name as category_name FROM shop_products p LEFT JOIN shop_categories c ON c.id = p.category_id WHERE p.status = 'active'"
+    params = []
+    if cat_slug:
+        query += " AND c.slug = ?"
+        params.append(cat_slug)
+    if q:
+        query += " AND (p.name LIKE ? OR p.description LIKE ?)"
+        params += [f"%{q}%", f"%{q}%"]
+    query += " ORDER BY p.featured DESC, p.created_at DESC"
+    products = db.execute(query, params).fetchall()
+
+    return render_template(
+        "shop_index.html", categories=categories, featured=featured, products=products,
+        active_category=cat_slug, q=q,
+    )
+
+
+@app.route("/shop/product/<slug>")
+def shop_product_detail(slug):
+    db = get_db()
+    product = db.execute(
+        "SELECT p.*, c.name as category_name, c.slug as category_slug FROM shop_products p "
+        "LEFT JOIN shop_categories c ON c.id = p.category_id WHERE p.slug = ? AND p.status = 'active'",
+        (slug,),
+    ).fetchone()
+    if not product:
+        abort(404)
+    variants = db.execute("SELECT * FROM shop_variants WHERE product_id = ? ORDER BY id", (product["id"],)).fetchall()
+    related = db.execute(
+        "SELECT * FROM shop_products WHERE category_id = ? AND id != ? AND status = 'active' LIMIT 4",
+        (product["category_id"], product["id"]),
+    ).fetchall()
+    return render_template("shop_product.html", product=product, variants=variants, related=related)
+
+
+@app.route("/cart")
+def shop_cart_view():
+    db = get_db()
+    items, total = cart_details(db)
+    return render_template("shop_cart.html", items=items, total=total)
+
+
+@app.route("/cart/add", methods=["POST"])
+def shop_cart_add():
+    db = get_db()
+    product_id = request.form.get("product_id", type=int)
+    variant_id = request.form.get("variant_id", type=int) or None
+    qty = max(1, request.form.get("qty", default=1, type=int) or 1)
+
+    product = db.execute("SELECT * FROM shop_products WHERE id = ? AND status = 'active'", (product_id,)).fetchone()
+    if not product:
+        flash("This product is no longer available.", "error")
+        return redirect(url_for("shop_index"))
+
+    if product["has_variants"]:
+        variant = db.execute("SELECT * FROM shop_variants WHERE id = ? AND product_id = ?", (variant_id, product_id)).fetchone()
+        if not variant:
+            flash("Please choose a size/colour option.", "error")
+            return redirect(url_for("shop_product_detail", slug=product["slug"]))
+        available = variant["stock"]
+    else:
+        variant_id = None
+        available = product["stock"]
+
+    if available <= 0:
+        flash("Sorry, this item is out of stock.", "error")
+        return redirect(url_for("shop_product_detail", slug=product["slug"]))
+
+    cart = get_cart()
+    for entry in cart:
+        if entry["product_id"] == product_id and entry.get("variant_id") == variant_id:
+            entry["qty"] = min(entry["qty"] + qty, available)
+            break
+    else:
+        cart.append({"product_id": product_id, "variant_id": variant_id, "qty": min(qty, available)})
+    save_cart(cart)
+    flash(f'Added "{product["name"]}" to your cart.', "success")
+    return redirect(request.referrer or url_for("shop_index"))
+
+
+@app.route("/cart/update", methods=["POST"])
+def shop_cart_update():
+    db = get_db()
+    product_id = request.form.get("product_id", type=int)
+    variant_id = request.form.get("variant_id", type=int) or None
+    qty = request.form.get("qty", type=int)
+    cart = get_cart()
+    if qty is not None and qty <= 0:
+        cart = [e for e in cart if not (e["product_id"] == product_id and e.get("variant_id") == variant_id)]
+    else:
+        for entry in cart:
+            if entry["product_id"] == product_id and entry.get("variant_id") == variant_id:
+                entry["qty"] = qty
+    save_cart(cart)
+    return redirect(url_for("shop_cart_view"))
+
+
+@app.route("/cart/remove", methods=["POST"])
+def shop_cart_remove():
+    product_id = request.form.get("product_id", type=int)
+    variant_id = request.form.get("variant_id", type=int) or None
+    cart = [e for e in get_cart() if not (e["product_id"] == product_id and e.get("variant_id") == variant_id)]
+    save_cart(cart)
+    flash("Item removed from cart.", "success")
+    return redirect(url_for("shop_cart_view"))
+
+
+@app.route("/checkout", methods=["GET", "POST"])
+def shop_checkout():
+    db = get_db()
+    items, total = cart_details(db)
+    if not items:
+        flash("Your cart is empty.", "error")
+        return redirect(url_for("shop_index"))
+
+    if request.method == "POST":
+        customer_name = request.form.get("customer_name", "").strip()[:120]
+        customer_phone = request.form.get("customer_phone", "").strip()
+        customer_address = request.form.get("customer_address", "").strip()[:500]
+        consent = request.form.get("consent")
+
+        errors = []
+        if not customer_name:
+            errors.append("Please enter your name.")
+        if not valid_indian_phone(customer_phone):
+            errors.append("Please enter a valid 10-digit Indian mobile number.")
+        if not customer_address:
+            errors.append("Please enter your shipping address.")
+        if not consent:
+            errors.append("Please confirm you have completed the payment.")
+
+        proof_file = request.files.get("payment_proof")
+        proof_name = None
+        if not proof_file or not proof_file.filename:
+            errors.append("Please upload your payment screenshot.")
+        else:
+            try:
+                proof_name = save_payment_proof(proof_file)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        # Re-validate the cart against the live DB right before committing —
+        # stock/price could have changed since the page was rendered, and
+        # money-related decisions must never trust anything stale.
+        items, total = cart_details(db)
+        if not items:
+            errors.append("Your cart is empty.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("shop_checkout.html", items=items, total=total)
+
+        order_code = "ORD" + secrets.token_hex(4).upper()
+        now = datetime.now().isoformat()
+        cur = db.execute(
+            "INSERT INTO shop_orders (order_code, customer_name, customer_phone, customer_address, "
+            "total_amount, payment_status, order_status, payment_proof_name, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?)",
+            (order_code, customer_name, customer_phone, customer_address, total, proof_name, now, now),
+        )
+        order_id = cur.lastrowid
+
+        for item in items:
+            product = item["product"]
+            variant = item["variant"]
+            db.execute(
+                "INSERT INTO shop_order_items (order_id, product_id, variant_id, product_name, "
+                "variant_label, unit_price, qty) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (order_id, product["id"], variant["id"] if variant else None, product["name"],
+                 (f"{variant['size'] or ''} {variant['color'] or ''}".strip() if variant else None),
+                 item["unit_price"], item["qty"]),
+            )
+            # Reserve stock immediately so two customers can't both buy the
+            # last unit while payment proofs are being manually reviewed.
+            # Restored automatically if the admin cancels/rejects the order.
+            if variant:
+                db.execute("UPDATE shop_variants SET stock = MAX(stock - ?, 0) WHERE id = ?", (item["qty"], variant["id"]))
+            else:
+                db.execute("UPDATE shop_products SET stock = MAX(stock - ?, 0) WHERE id = ?", (item["qty"], product["id"]))
+
+        db.commit()
+        save_cart([])
+
+        notify_admin(
+            "New Islamic Shop order",
+            f"{customer_name} ({customer_phone}) placed order {order_code} for ₹{total}. "
+            f"Review: {request.url_root.rstrip('/')}{url_for('admin_shop_orders')}",
+        )
+        return redirect(url_for("shop_order_status", order_code=order_code))
+
+    return render_template("shop_checkout.html", items=items, total=total)
+
+
+@app.route("/shop/order/<order_code>")
+def shop_order_status(order_code):
+    db = get_db()
+    order = db.execute("SELECT * FROM shop_orders WHERE order_code = ?", (order_code,)).fetchone()
+    if not order:
+        abort(404)
+    items = db.execute("SELECT * FROM shop_order_items WHERE order_id = ?", (order["id"],)).fetchall()
+    return render_template("shop_order_status.html", order=order, items=items)
+
+
+# ======================================================================
+# ADMIN — ISLAMIC SHOP: CATEGORIES
+# ======================================================================
+@app.route("/admin/shop/categories", methods=["GET", "POST"])
+@admin_required
+def admin_shop_categories():
+    db = get_db()
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "add":
+            name = request.form.get("name", "").strip()[:80]
+            if not name:
+                flash("Category name is required.", "error")
+            else:
+                slug = unique_slug(db, "shop_categories", slugify(name))
+                db.execute("INSERT INTO shop_categories (name, slug, sort_order) VALUES (?, ?, ?)",
+                           (name, slug, request.form.get("sort_order", 0, type=int) or 0))
+                db.commit()
+                log_admin_action("add_shop_category", name)
+                flash(f'Category "{name}" added.', "success")
+        elif action == "delete":
+            cat_id = request.form.get("category_id")
+            db.execute("UPDATE shop_products SET category_id = NULL WHERE category_id = ?", (cat_id,))
+            db.execute("DELETE FROM shop_categories WHERE id = ?", (cat_id,))
+            db.commit()
+            log_admin_action("delete_shop_category", str(cat_id))
+            flash("Category deleted. Its products are now uncategorised.", "success")
+        elif action == "rename":
+            cat_id = request.form.get("category_id")
+            name = request.form.get("name", "").strip()[:80]
+            if name:
+                db.execute("UPDATE shop_categories SET name = ? WHERE id = ?", (name, cat_id))
+                db.commit()
+                flash("Category updated.", "success")
+        return redirect(url_for("admin_shop_categories"))
+
+    categories = db.execute(
+        "SELECT c.*, (SELECT COUNT(*) FROM shop_products p WHERE p.category_id = c.id) as product_count "
+        "FROM shop_categories c ORDER BY c.sort_order, c.name"
+    ).fetchall()
+    return render_template("admin_shop_categories.html", categories=categories)
+
+
+# ======================================================================
+# ADMIN — ISLAMIC SHOP: PRODUCTS
+# ======================================================================
+@app.route("/admin/shop/products")
+@admin_required
+def admin_shop_products():
+    db = get_db()
+    cat_id = request.args.get("category", type=int)
+    status = request.args.get("status", "")
+    q = request.args.get("q", "").strip()
+
+    query = "SELECT p.*, c.name as category_name FROM shop_products p LEFT JOIN shop_categories c ON c.id = p.category_id WHERE 1=1"
+    params = []
+    if cat_id:
+        query += " AND p.category_id = ?"
+        params.append(cat_id)
+    if status:
+        query += " AND p.status = ?"
+        params.append(status)
+    if q:
+        query += " AND p.name LIKE ?"
+        params.append(f"%{q}%")
+    query += " ORDER BY p.created_at DESC"
+    products = db.execute(query, params).fetchall()
+    categories = shop_categories_list(db)
+    return render_template("admin_shop_products.html", products=products, categories=categories,
+                            cat_id=cat_id, status=status, q=q)
+
+
+def _save_product_images(files):
+    names = []
+    for f in files:
+        if f and f.filename:
+            try:
+                name = save_generic_image(f, SHOP_IMAGES_DIR, max_dim=1400)
+                if name:
+                    names.append(name)
+            except ImageValidationError as e:
+                flash(f"One image was skipped: {e}", "error")
+    return names
+
+
+@app.route("/admin/shop/products/add", methods=["GET", "POST"])
+@admin_required
+def admin_shop_product_add():
+    db = get_db()
+    categories = shop_categories_list(db)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()[:150]
+        errors = []
+        try:
+            price = float(request.form.get("price", "0") or 0)
+        except ValueError:
+            price = 0
+            errors.append("Price must be a number.")
+        discount_raw = request.form.get("discount_price", "").strip()
+        discount_price = None
+        if discount_raw:
+            try:
+                discount_price = float(discount_raw)
+                if discount_price >= price:
+                    errors.append("Discount price must be lower than the regular price.")
+            except ValueError:
+                errors.append("Discount price must be a number.")
+        if not name:
+            errors.append("Product name is required.")
+        if price <= 0:
+            errors.append("Price must be greater than 0.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("admin_shop_product_form.html", categories=categories, product=None, variants=[])
+
+        slug = unique_slug(db, "shop_products", slugify(name))
+        now = datetime.now().isoformat()
+        images = _save_product_images(request.files.getlist("images"))
+        has_variants = 1 if request.form.get("has_variants") == "1" else 0
+
+        cur = db.execute(
+            "INSERT INTO shop_products (category_id, name, slug, description, price, discount_price, "
+            "stock, has_variants, images, status, featured, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (request.form.get("category_id", type=int), name, slug, request.form.get("description", "").strip()[:2000],
+             price, discount_price, request.form.get("stock", 0, type=int) or 0, has_variants,
+             ",".join(images), request.form.get("status", "active"),
+             1 if request.form.get("featured") == "1" else 0, now, now),
+        )
+        product_id = cur.lastrowid
+
+        if has_variants:
+            sizes = request.form.getlist("variant_size[]")
+            colors = request.form.getlist("variant_color[]")
+            stocks = request.form.getlist("variant_stock[]")
+            for size, color, stock in zip(sizes, colors, stocks):
+                if size.strip() or color.strip():
+                    db.execute("INSERT INTO shop_variants (product_id, size, color, stock) VALUES (?, ?, ?, ?)",
+                               (product_id, size.strip()[:40], color.strip()[:40], int(stock or 0)))
+
+        db.commit()
+        log_admin_action("add_shop_product", name)
+        flash(f'Product "{name}" created.', "success")
+        return redirect(url_for("admin_shop_products"))
+
+    return render_template("admin_shop_product_form.html", categories=categories, product=None, variants=[])
+
+
+@app.route("/admin/shop/products/<int:product_id>/edit", methods=["GET", "POST"])
+@admin_required
+def admin_shop_product_edit(product_id):
+    db = get_db()
+    product = db.execute("SELECT * FROM shop_products WHERE id = ?", (product_id,)).fetchone()
+    if not product:
+        abort(404)
+    categories = shop_categories_list(db)
+    variants = db.execute("SELECT * FROM shop_variants WHERE product_id = ? ORDER BY id", (product_id,)).fetchall()
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()[:150]
+        errors = []
+        try:
+            price = float(request.form.get("price", "0") or 0)
+        except ValueError:
+            price = 0
+            errors.append("Price must be a number.")
+        discount_raw = request.form.get("discount_price", "").strip()
+        discount_price = None
+        if discount_raw:
+            try:
+                discount_price = float(discount_raw)
+                if discount_price >= price:
+                    errors.append("Discount price must be lower than the regular price.")
+            except ValueError:
+                errors.append("Discount price must be a number.")
+        if not name:
+            errors.append("Product name is required.")
+        if price <= 0:
+            errors.append("Price must be greater than 0.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("admin_shop_product_form.html", categories=categories, product=product, variants=variants)
+
+        images = list(filter(None, (product["images"] or "").split(",")))
+        if request.form.get("remove_images"):
+            removed = set(request.form.getlist("remove_images"))
+            for img in removed:
+                delete_file_quietly(SHOP_IMAGES_DIR, img)
+            images = [i for i in images if i not in removed]
+        images += _save_product_images(request.files.getlist("images"))
+
+        has_variants = 1 if request.form.get("has_variants") == "1" else 0
+        new_slug = product["slug"]
+        if slugify(name) != product["slug"].rsplit("-", 1)[0]:
+            new_slug = unique_slug(db, "shop_products", slugify(name), exclude_id=product_id)
+
+        db.execute(
+            "UPDATE shop_products SET category_id=?, name=?, slug=?, description=?, price=?, discount_price=?, "
+            "stock=?, has_variants=?, images=?, status=?, featured=?, updated_at=? WHERE id=?",
+            (request.form.get("category_id", type=int), name, new_slug, request.form.get("description", "").strip()[:2000],
+             price, discount_price, request.form.get("stock", 0, type=int) or 0, has_variants,
+             ",".join(images), request.form.get("status", "active"),
+             1 if request.form.get("featured") == "1" else 0, datetime.now().isoformat(), product_id),
+        )
+
+        if has_variants:
+            db.execute("DELETE FROM shop_variants WHERE product_id = ?", (product_id,))
+            sizes = request.form.getlist("variant_size[]")
+            colors = request.form.getlist("variant_color[]")
+            stocks = request.form.getlist("variant_stock[]")
+            for size, color, stock in zip(sizes, colors, stocks):
+                if size.strip() or color.strip():
+                    db.execute("INSERT INTO shop_variants (product_id, size, color, stock) VALUES (?, ?, ?, ?)",
+                               (product_id, size.strip()[:40], color.strip()[:40], int(stock or 0)))
+        else:
+            db.execute("DELETE FROM shop_variants WHERE product_id = ?", (product_id,))
+
+        db.commit()
+        log_admin_action("edit_shop_product", name)
+        flash("Product updated.", "success")
+        return redirect(url_for("admin_shop_products"))
+
+    return render_template("admin_shop_product_form.html", categories=categories, product=product, variants=variants)
+
+
+@app.route("/admin/shop/products/<int:product_id>/delete", methods=["POST"])
+@admin_required
+def admin_shop_product_delete(product_id):
+    db = get_db()
+    product = db.execute("SELECT * FROM shop_products WHERE id = ?", (product_id,)).fetchone()
+    if product:
+        for img in filter(None, (product["images"] or "").split(",")):
+            delete_file_quietly(SHOP_IMAGES_DIR, img)
+        db.execute("DELETE FROM shop_products WHERE id = ?", (product_id,))
+        db.commit()
+        log_admin_action("delete_shop_product", product["name"])
+        flash("Product deleted.", "success")
+    return redirect(url_for("admin_shop_products"))
+
+
+@app.route("/admin/shop/products/<int:product_id>/toggle", methods=["POST"])
+@admin_required
+def admin_shop_product_toggle(product_id):
+    db = get_db()
+    product = db.execute("SELECT * FROM shop_products WHERE id = ?", (product_id,)).fetchone()
+    if product:
+        new_status = "inactive" if product["status"] == "active" else "active"
+        db.execute("UPDATE shop_products SET status = ?, updated_at = ? WHERE id = ?",
+                   (new_status, datetime.now().isoformat(), product_id))
+        db.commit()
+        log_admin_action("toggle_shop_product", f"{product['name']} -> {new_status}")
+    return redirect(request.referrer or url_for("admin_shop_products"))
+
+
+# ======================================================================
+# ADMIN — ISLAMIC SHOP: ORDERS
+# ======================================================================
+SHOP_ORDER_STATUSES = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"]
+SHOP_PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"]
+
+
+@app.route("/admin/shop/orders")
+@admin_required
+def admin_shop_orders():
+    db = get_db()
+    status = request.args.get("status", "")
+    query = "SELECT * FROM shop_orders WHERE 1=1"
+    params = []
+    if status:
+        query += " AND order_status = ?"
+        params.append(status)
+    query += " ORDER BY created_at DESC"
+    orders = db.execute(query, params).fetchall()
+    return render_template("admin_shop_orders.html", orders=orders, status=status, statuses=SHOP_ORDER_STATUSES)
+
+
+@app.route("/admin/shop/orders/<int:order_id>")
+@admin_required
+def admin_shop_order_detail(order_id):
+    db = get_db()
+    order = db.execute("SELECT * FROM shop_orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        abort(404)
+    items = db.execute("SELECT * FROM shop_order_items WHERE order_id = ?", (order_id,)).fetchall()
+    return render_template("admin_shop_order_detail.html", order=order, items=items,
+                            order_statuses=SHOP_ORDER_STATUSES, payment_statuses=SHOP_PAYMENT_STATUSES)
+
+
+@app.route("/admin/shop/orders/<int:order_id>/update", methods=["POST"])
+@admin_required
+def admin_shop_order_update(order_id):
+    db = get_db()
+    order = db.execute("SELECT * FROM shop_orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        abort(404)
+    new_order_status = request.form.get("order_status", order["order_status"])
+    new_payment_status = request.form.get("payment_status", order["payment_status"])
+
+    # If an order is cancelled or a payment marked failed/refunded after having
+    # reserved stock, restore that stock so it can be sold again.
+    if new_order_status == "cancelled" and order["order_status"] != "cancelled":
+        items = db.execute("SELECT * FROM shop_order_items WHERE order_id = ?", (order_id,)).fetchall()
+        for item in items:
+            if item["variant_id"]:
+                db.execute("UPDATE shop_variants SET stock = stock + ? WHERE id = ?", (item["qty"], item["variant_id"]))
+            elif item["product_id"]:
+                db.execute("UPDATE shop_products SET stock = stock + ? WHERE id = ?", (item["qty"], item["product_id"]))
+
+    db.execute("UPDATE shop_orders SET order_status = ?, payment_status = ?, updated_at = ? WHERE id = ?",
+               (new_order_status, new_payment_status, datetime.now().isoformat(), order_id))
+    db.commit()
+    log_admin_action("update_shop_order", f"{order['order_code']} -> {new_order_status}/{new_payment_status}")
+    flash("Order updated.", "success")
+    return redirect(url_for("admin_shop_order_detail", order_id=order_id))
 
 
 # ======================================================================

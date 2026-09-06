@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Your Islamic Shop — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container">
+    <div class="shop-hero">
+        <span class="btn-heart-icon" style="margin-bottom:10px; width:30px; height:20px;"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span>
+        <h1>Your Islamic Shop</h1>
+        <p>Modest wear, everyday essentials and thoughtful gifts — curated with the same trust and care as our matrimonial service.</p>
+    </div>
+
+    <form method="get" style="display:flex; gap:10px; margin-bottom:6px; max-width:420px;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Search products…" class="input">
+        <button class="btn btn-outline btn-sm" type="submit">Search</button>
+    </form>
+
+    <div class="shop-cat-chips">
+        <a href="{{ url_for('shop_index') }}" class="shop-cat-chip {{ 'active' if not active_category }}">All</a>
+        {% for c in categories %}
+        <a href="{{ url_for('shop_index', category=c.slug) }}" class="shop-cat-chip {{ 'active' if active_category == c.slug }}">{{ c.name }}</a>
+        {% endfor %}
+        {% if not categories %}<span class="muted" style="font-size:13px;">No categories yet — add some in Admin → Shop → Categories.</span>{% endif %}
+    </div>
+
+    {% if featured and not active_category and not q %}
+    <h2 class="section-title" style="font-size:19px;">Featured</h2>
+    <div class="product-grid" style="margin-bottom:34px;">
+        {% for p in featured %}{% include "_product_card.html" %}{% endfor %}
+    </div>
+    {% endif %}
+
+    <h2 class="section-title" style="font-size:19px;">{{ 'Search Results' if q else (categories|selectattr('slug','equalto',active_category)|map(attribute='name')|first if active_category else 'All Products') }}</h2>
+    {% if products %}
+    <div class="product-grid">
+        {% for p in products %}{% include "_product_card.html" %}{% endfor %}
+    </div>
+    {% else %}
+    <div class="heart-loader">
+        <span class="loading-heart"><svg viewBox="0 0 64 40" width="46" height="30"><use href="#heartDuoIcon"/></svg></span>
+        <span>No products found here yet — check back soon, or browse another category.</span>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

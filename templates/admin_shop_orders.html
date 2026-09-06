@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Shop Orders — Admin{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<section class="container">
+    <h1 class="section-title">Shop Orders</h1>
+    <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_dashboard') }}">← Dashboard</a>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_shop_products') }}">Products</a>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_shop_categories') }}">Categories</a>
+    </div>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
+        <a class="shop-cat-chip {{ 'active' if not status }}" href="{{ url_for('admin_shop_orders') }}">All</a>
+        {% for s in statuses %}
+        <a class="shop-cat-chip {{ 'active' if status == s }}" href="{{ url_for('admin_shop_orders', status=s) }}">{{ s|capitalize }}</a>
+        {% endfor %}
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Date</th><th></th></tr>
+            {% for o in orders %}
+            <tr>
+                <td>{{ o.order_code }}</td>
+                <td>{{ o.customer_name }}<br><span class="muted" style="font-size:12px;">{{ o.customer_phone }}</span></td>
+                <td>₹{{ '%.0f'|format(o.total_amount) }}</td>
+                <td><span class="badge {{ 'badge-unlocked' if o.payment_status=='paid' else 'badge-pending' }}">{{ o.payment_status }}</span></td>
+                <td><span class="badge badge-pending">{{ o.order_status }}</span></td>
+                <td>{{ o.created_at[:10] }}</td>
+                <td><a class="btn btn-sm btn-outline" href="{{ url_for('admin_shop_order_detail', order_id=o.id) }}">View</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="muted">No orders yet.</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+</section>
+{% endblock %}

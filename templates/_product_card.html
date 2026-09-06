@@ -1,0 +1,24 @@
+<a class="product-card" href="{{ url_for('shop_product_detail', slug=p.slug) }}">
+    <div class="product-photo">
+        {% set first_img = (p.images or '').split(',')[0] %}
+        {% if first_img %}
+        <img src="{{ url_for('static', filename='shop/' + first_img) }}" alt="{{ p.name }}" loading="lazy">
+        {% else %}
+        <div class="no-image">No image yet</div>
+        {% endif %}
+        {% if p.featured %}<span class="product-badge">FEATURED</span>{% endif %}
+        {% if p.stock <= 0 and not p.has_variants %}<span class="product-badge-stock">OUT OF STOCK</span>{% endif %}
+    </div>
+    <div class="product-body">
+        {% if p.category_name %}<span class="product-cat">{{ p.category_name }}</span>{% endif %}
+        <h3 class="product-name">{{ p.name }}</h3>
+        <div class="product-price-row">
+            {% if p.discount_price %}
+            <span class="product-price">₹{{ '%.0f'|format(p.discount_price) }}</span>
+            <span class="product-price-old">₹{{ '%.0f'|format(p.price) }}</span>
+            {% else %}
+            <span class="product-price">₹{{ '%.0f'|format(p.price) }}</span>
+            {% endif %}
+        </div>
+    </div>
+</a>

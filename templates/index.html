@@ -8,8 +8,8 @@
             <p class="lead">{{ hero_subheading }}</p>
             <p class="hero-trust-line">✅ Verified Profiles &nbsp;·&nbsp; 🔒 Privacy Protected &nbsp;·&nbsp; 🤝 Serious Matrimonial Connections</p>
             <div class="hero-ctas">
-                <a href="#profiles" class="btn btn-primary">Browse Profiles</a>
-                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold">Register Yourself — ₹{{ registration_price }}</a>
+                <a href="#profiles" class="btn btn-primary"><span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span><span class="btn-label">Browse Profiles</span></a>
+                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold"><span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span><span class="btn-label">Register Yourself — ₹{{ registration_price }}</span></a>
             </div>
         </div>
         <div class="hero-panel">
@@ -49,7 +49,7 @@
                     <li>Your details are reviewed by our team before going live</li>
                     <li>Privacy-first — your contact stays hidden until a request is approved</li>
                 </ul>
-                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold">Register Myself — ₹{{ registration_price }}</a>
+                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold"><span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span><span class="btn-label">Register Myself — ₹{{ registration_price }}</span></a>
             </div>
             <div class="register-price-card">
                 <div class="price">₹{{ registration_price }}</div>
