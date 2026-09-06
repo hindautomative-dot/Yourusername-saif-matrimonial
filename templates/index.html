@@ -9,7 +9,7 @@
             <p class="hero-trust-line">✅ Verified Profiles &nbsp;·&nbsp; 🔒 Privacy Protected &nbsp;·&nbsp; 🤝 Serious Matrimonial Connections</p>
             <div class="hero-ctas">
                 <a href="#profiles" class="btn btn-primary"><span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span><span class="btn-label">Browse Profiles</span></a>
-                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold"><span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span><span class="btn-label">Register Yourself — ₹{{ registration_price }}</span></a>
+                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold btn-heart-lock"><span class="heart-lock-icon"><svg viewBox="0 0 40 40" width="20" height="20"><use href="#heartLockIcon"/></svg></span><span class="btn-label">Register Yourself — ₹{{ registration_price }}</span></a>
             </div>
         </div>
         <div class="hero-panel">
@@ -49,7 +49,7 @@
                     <li>Your details are reviewed by our team before going live</li>
                     <li>Privacy-first — your contact stays hidden until a request is approved</li>
                 </ul>
-                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold"><span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span><span class="btn-label">Register Myself — ₹{{ registration_price }}</span></a>
+                <a href="{{ url_for('register_yourself') }}" class="btn btn-gold btn-heart-lock"><span class="heart-lock-icon"><svg viewBox="0 0 40 40" width="20" height="20"><use href="#heartLockIcon"/></svg></span><span class="btn-label">Register Myself — ₹{{ registration_price }}</span></a>
             </div>
             <div class="register-price-card">
                 <div class="price">₹{{ registration_price }}</div>
@@ -121,9 +121,107 @@
     </div>
 </section>
 
+{% if testimonials %}
+<section class="container" id="success-stories">
+    <h2 class="section-title">Success Stories</h2>
+    <p class="section-sub">Real families, real Nikahs — matched through {{ business_name }}.</p>
+
+    <div class="testimonial-slider">
+        {% for t in testimonials %}
+        <div class="testimonial-card {{ 'featured' if t.is_featured }}">
+            <div class="testimonial-photo-wrap">
+                {% if t.photo_filename %}
+                <img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" alt="{{ t.groom_name }} &amp; {{ t.bride_name }}">
+                {% else %}
+                <div class="testimonial-photo-placeholder">{{ t.groom_name[0] }}{{ t.bride_name[0] }}</div>
+                {% endif %}
+            </div>
+            <div class="testimonial-verified">✓ Matched on Our Platform</div>
+            <div class="testimonial-names">{{ t.groom_name }} &amp; {{ t.bride_name }}</div>
+            {% if t.event_date %}<div class="testimonial-date">{{ t.event_date }}</div>{% endif %}
+            <div class="testimonial-stars">{{ '⭐' * t.rating }}</div>
+            {% if t.short_quote %}<p class="testimonial-quote">&ldquo;{{ t.short_quote }}&rdquo;</p>{% endif %}
+            {% if t.full_story %}
+            <button class="testimonial-read-more" onclick="openTestimonialModal({{ loop.index0 }})">Read Full Journey →</button>
+            <div class="testimonial-full-story" style="display:none;">{{ t.full_story }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<div class="testimonial-modal-overlay" id="testimonialModalOverlay" onclick="if(event.target===this) closeTestimonialModal()">
+    <div class="testimonial-modal">
+        <button class="testimonial-modal-close" onclick="closeTestimonialModal()">✕</button>
+        <div id="testimonialModalContent"></div>
+    </div>
+</div>
+<script>
+function openTestimonialModal(idx){
+    var cards = document.querySelectorAll('.testimonial-card');
+    var card = cards[idx];
+    var names = card.querySelector('.testimonial-names').innerHTML;
+    var story = card.querySelector('.testimonial-full-story').innerHTML;
+    var photo = card.querySelector('.testimonial-photo-wrap').innerHTML;
+    document.getElementById('testimonialModalContent').innerHTML =
+        '<div class="testimonial-photo-wrap" style="margin:0 auto 14px;">' + photo + '</div>' +
+        '<h3 class="serif center" style="color:var(--emerald-dark);">' + names + '</h3>' +
+        '<p style="line-height:1.8; font-size:14.5px; white-space:pre-wrap;">' + story + '</p>';
+    document.getElementById('testimonialModalOverlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+function closeTestimonialModal(){
+    document.getElementById('testimonialModalOverlay').classList.remove('open');
+    document.body.style.overflow = '';
+}
+</script>
+{% endif %}
+
+<section class="container hands-section" id="destinies-meet">
+    <h2 class="section-title center">Where Destinies Meet</h2>
+    <p class="section-sub center">Every profile here is a family's hope, held with the care it deserves.</p>
+    <div class="hands-stage" id="handsStage">
+        <svg class="hand-left" viewBox="0 0 120 90" width="140" height="105" aria-hidden="true">
+            <path d="M10 60 C20 40 35 30 55 32 C70 33 78 42 82 50" fill="none" stroke="url(#heartDuoGoldGrad)" stroke-width="4" stroke-linecap="round"/>
+            <path d="M18 68 C28 50 42 42 60 44" fill="none" stroke="url(#heartDuoGoldGrad)" stroke-width="2.5" stroke-linecap="round" opacity=".6"/>
+        </svg>
+        <div class="hands-particle-burst" id="handsBurst"></div>
+        <svg class="hand-right" viewBox="0 0 120 90" width="140" height="105" aria-hidden="true">
+            <path d="M110 60 C100 40 85 30 65 32 C50 33 42 42 38 50" fill="none" stroke="url(#heartDuoGoldGrad)" stroke-width="4" stroke-linecap="round"/>
+            <path d="M102 68 C92 50 78 42 60 44" fill="none" stroke="url(#heartDuoGoldGrad)" stroke-width="2.5" stroke-linecap="round" opacity=".6"/>
+        </svg>
+    </div>
+</section>
+<script>
+(function(){
+    var stage = document.getElementById('handsStage');
+    if (!stage || !('IntersectionObserver' in window)) { if(stage) stage.classList.add('joined'); return; }
+    var obs = new IntersectionObserver(function(entries){
+        entries.forEach(function(entry){
+            if (entry.isIntersecting) {
+                stage.classList.add('joined');
+                var burst = document.getElementById('handsBurst');
+                burst.innerHTML = '';
+                for (var i=0;i<14;i++){
+                    var p = document.createElement('span');
+                    p.className = 'hand-particle';
+                    var angle = (i/14) * 360;
+                    p.style.setProperty('--angle', angle + 'deg');
+                    p.style.animationDelay = (0.55 + Math.random()*0.15) + 's';
+                    burst.appendChild(p);
+                }
+                obs.unobserve(stage);
+            }
+        });
+    }, {threshold: 0.4});
+    obs.observe(stage);
+})();
+</script>
+
 <section class="container">
     <h2 class="section-title">How It Works</h2>
     <p class="section-sub">Four simple steps to connect.</p>
+
     <div class="steps-grid">
         <div class="step-card">
             <div class="step-num">01</div>

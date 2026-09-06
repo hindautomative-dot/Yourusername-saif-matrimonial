@@ -46,7 +46,21 @@
             <input type="text" id="customer_name" name="customer_name" required>
 
             <label for="customer_phone">Mobile Number *</label>
-            <input type="tel" id="customer_phone" name="customer_phone" pattern="[6-9][0-9]{9}" placeholder="10-digit mobile number" required>
+            <input type="tel" id="customer_phone" name="customer_phone" pattern="[6-9][0-9]{9}" placeholder="10-digit mobile number" value="{{ session.get('verified_phone','') }}" required>
+
+            {% if wallet_balance > 0 %}
+            <div class="coin-redeem-box">
+                <label>
+                    <input type="checkbox" id="useCoinsCheck" onchange="document.getElementById('coinsAmountRow').style.display=this.checked?'flex':'none'; document.getElementById('use_coins').value=this.checked?document.getElementById('use_coins').max:0;">
+                    <span>🟡 Use my Match Coins — you have {{ wallet_balance }} coins (₹{{ '%.0f'|format(wallet_balance * coin_value_inr) }} value)</span>
+                </label>
+                <div id="coinsAmountRow" style="display:none; align-items:center; gap:8px; margin-top:10px;">
+                    <span style="font-size:13px;">Coins to use:</span>
+                    <input type="number" name="use_coins" id="use_coins" min="0" max="{{ [wallet_balance, (total / coin_value_inr)|int]|min }}" value="0" style="width:80px; min-height:34px; padding:4px 8px;">
+                </div>
+                <div class="helptext">Only works if the mobile number above matches your OTP-verified number (verify via "My Requests" first).</div>
+            </div>
+            {% endif %}
 
             <label for="customer_address">Shipping Address *</label>
             <textarea id="customer_address" name="customer_address" rows="3" required></textarea>
@@ -60,8 +74,8 @@
                 <span>I have completed the payment and understand my order is confirmed after manual verification.</span>
             </label>
 
-            <button class="btn btn-gold btn-block" type="submit" style="margin-top:22px;">
-                <span class="btn-heart-icon"><svg viewBox="0 0 64 40"><use href="#heartDuoIcon"/></svg></span>
+            <button class="btn btn-gold btn-heart-lock btn-block" type="submit" style="margin-top:22px;">
+                {% include "_heart_lock_icon.html" %}
                 <span class="btn-label">Submit Order</span>
             </button>
         </form>

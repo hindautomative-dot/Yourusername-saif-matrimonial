@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Notifications — Admin{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<section class="container-narrow">
+    <h1 class="section-title">Push a Notification</h1>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('admin_dashboard') }}" style="margin-bottom:16px; display:inline-block;">← Dashboard</a>
+
+    <form method="post" class="card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="create">
+
+        <label>Title *</label>
+        <input type="text" name="title" placeholder="e.g. New Year Offer" required>
+
+        <label>Message *</label>
+        <textarea name="body" rows="3" placeholder="What should users see?" required></textarea>
+
+        <div style="display:flex; gap:14px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:160px;">
+                <label>Target Group</label>
+                <select name="target_group">
+                    <option value="all">All Users</option>
+                    <option value="new_users">New Users (never verified a phone)</option>
+                    <option value="unregistered">Unregistered Visitors</option>
+                </select>
+            </div>
+            <div style="flex:1; min-width:160px;">
+                <label>Auto-expire After (days, optional)</label>
+                <input type="number" name="expires_days" min="1" placeholder="Leave blank = no expiry">
+            </div>
+        </div>
+
+        <label>Action URL (optional)</label>
+        <input type="text" name="action_url" placeholder="/shop or https://...">
+
+        <button class="btn btn-primary btn-block" type="submit" style="margin-top:18px;">Push Notification Live</button>
+    </form>
+
+    <h2 class="section-title" style="font-size:19px; margin-top:34px;">Recent Notifications</h2>
+    <div class="table-wrap">
+        <table>
+            <tr><th>Title</th><th>Target</th><th>Status</th><th>Sent</th><th></th></tr>
+            {% for n in rows %}
+            <tr>
+                <td>{{ n.title }}<br><span class="muted" style="font-size:12px;">{{ n.body[:60] }}</span></td>
+                <td>{{ n.target_group }}</td>
+                <td><span class="badge {{ 'badge-unlocked' if n.is_active else 'badge-rejected' }}">{{ 'Live' if n.is_active else 'Withdrawn' }}</span></td>
+                <td>{{ n.created_at[:16] }}</td>
+                <td style="display:flex; gap:6px;">
+                    {% if n.is_active %}
+                    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="deactivate"><input type="hidden" name="notif_id" value="{{ n.id }}"><button class="btn btn-sm btn-outline" type="submit">Withdraw</button></form>
+                    {% endif %}
+                    <form method="post" onsubmit="return confirm('Delete permanently?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="notif_id" value="{{ n.id }}"><button class="btn btn-sm btn-danger" type="submit">Delete</button></form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="muted">No notifications sent yet.</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+</section>
+{% endblock %}

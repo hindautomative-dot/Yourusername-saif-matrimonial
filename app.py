@@ -11,7 +11,7 @@ from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, flash, g, abort, send_from_directory, send_file, Response
+    session, flash, g, abort, send_from_directory, send_file, Response, jsonify
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -492,6 +492,60 @@ def init_db():
     # recorded at the moment they submit an unlock/package request.
     _ensure_column(db, "unlock_requests", "viewer_declaration", "INTEGER")
 
+    # Match Coins wallet redemption trail on unlock/package requests —
+    # how many coins (if any) were used to discount this particular request,
+    # and the INR value that represented at the time (coin value can change
+    # later in Settings, so we snapshot it here rather than recompute).
+    _ensure_column(db, "unlock_requests", "coins_used", "INTEGER")
+    _ensure_column(db, "unlock_requests", "discount_amount", "REAL")
+    _ensure_column(db, "shop_orders", "coins_used", "INTEGER")
+    _ensure_column(db, "shop_orders", "discount_amount", "REAL")
+
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS coin_wallets (
+            phone TEXT PRIMARY KEY,
+            balance INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS coin_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT NOT NULL,
+            delta INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            reference TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS testimonials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            groom_name TEXT NOT NULL,
+            bride_name TEXT NOT NULL,
+            event_date TEXT,
+            photo_filename TEXT,
+            rating INTEGER DEFAULT 5,
+            short_quote TEXT,
+            full_story TEXT,
+            is_featured INTEGER DEFAULT 0,
+            is_approved INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            target_group TEXT DEFAULT 'all',
+            action_url TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            expires_at TEXT
+        );
+        """
+    )
+
     # Backfill: profiles created before this field existed. We can't know
     # retroactively which ones came through self-registration, so we default
     # them to "admin" (the original, only way profiles were created) — this
@@ -524,6 +578,8 @@ def init_db():
         "font_heading": "Playfair Display",
         "font_body": "Inter",
         "font_button": "Inter",
+        "coin_value_inr": "2.2",
+        "registration_bonus_coins": "5",
         "hero_heading": "Find Your Life Partner With Trust, Haya &amp; Purpose",
         "hero_subheading": "A serious, privacy-first matrimonial service for meaningful Nikah connections.",
         "footer_text": "",
@@ -603,6 +659,8 @@ def inject_globals():
         font_button=s.get("font_button", "Inter"),
         custom_fonts=list_custom_fonts(),
         cart_count=cart_item_count(),
+        wallet_balance=get_wallet_balance(verified_phone()),
+        coin_value_inr=coin_value_inr(),
         hero_heading=s.get("hero_heading", ""),
         hero_subheading=s.get("hero_subheading", ""),
         footer_text=s.get("footer_text", ""),
@@ -790,8 +848,77 @@ def cart_details(db):
 
 
 # ======================================================================
+# MATCH COINS — WALLET ENGINE
+# Coins are a wallet-style discount credit, always tied to an
+# OTP-verified phone number (never a phone typed into a form — that is
+# not proof of ownership, same principle already used for unlock_requests).
+# ======================================================================
+def coin_value_inr():
+    try:
+        return float(get_setting("coin_value_inr", "2.2"))
+    except (TypeError, ValueError):
+        return 2.2
+
+
+def registration_bonus_coins():
+    try:
+        return int(get_setting("registration_bonus_coins", "5"))
+    except (TypeError, ValueError):
+        return 5
+
+
+def get_wallet_balance(phone):
+    if not phone:
+        return 0
+    db = get_db()
+    row = db.execute("SELECT balance FROM coin_wallets WHERE phone = ?", (phone,)).fetchone()
+    return row["balance"] if row else 0
+
+
+def credit_coins(phone, amount, reason, reference=None):
+    if not phone or amount <= 0:
+        return
+    db = get_db()
+    now = datetime.now().isoformat()
+    db.execute(
+        "INSERT INTO coin_wallets (phone, balance, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(phone) DO UPDATE SET balance = balance + excluded.balance, updated_at = excluded.updated_at",
+        (phone, amount, now),
+    )
+    db.execute("INSERT INTO coin_ledger (phone, delta, reason, reference, created_at) VALUES (?, ?, ?, ?, ?)",
+               (phone, amount, reason, reference, now))
+    db.commit()
+
+
+def debit_coins(phone, amount, reason, reference=None):
+    """Returns True and commits the debit only if the wallet actually has
+    enough balance — never lets a balance go negative."""
+    if not phone or amount <= 0:
+        return True
+    db = get_db()
+    balance = get_wallet_balance(phone)
+    if balance < amount:
+        return False
+    now = datetime.now().isoformat()
+    db.execute("UPDATE coin_wallets SET balance = balance - ?, updated_at = ? WHERE phone = ?", (amount, now, phone))
+    db.execute("INSERT INTO coin_ledger (phone, delta, reason, reference, created_at) VALUES (?, ?, ?, ?, ?)",
+               (phone, -amount, reason, reference, now))
+    db.commit()
+    return True
+
+
+def refund_coins(phone, amount, reason, reference=None):
+    """Used when an order/request that redeemed coins is later rejected/cancelled."""
+    if amount:
+        credit_coins(phone, amount, reason, reference)
+
+
+# ======================================================================
 # CSRF PROTECTION (lightweight, no external dependency)
 # ======================================================================
+
+
+
 def get_csrf_token():
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_hex(24)
@@ -1286,6 +1413,9 @@ def index():
         page=page, total_pages=total_pages, total=total, any_filter_active=any_filter_active,
         hero_banners=active_banners("hero"), mid_banners=active_banners("mid"),
         footer_banners=active_banners("footer"),
+        testimonials=db.execute(
+            "SELECT * FROM testimonials WHERE is_approved = 1 ORDER BY is_featured DESC, sort_order, created_at DESC LIMIT 12"
+        ).fetchall(),
     )
 
 
@@ -1386,6 +1516,22 @@ def unlock(profile_code):
         if not viewer_declaration:
             errors.append("Please confirm the declaration about genuine use and not misusing/screenshotting the profile data.")
 
+        # Match Coins redemption — only ever against the SESSION's OTP-verified
+        # phone number, never the phone typed into this form (that's not proof
+        # of ownership; see the note below about verified_phone()).
+        unlock_price = float(get_setting("unlock_price", "49"))
+        coins_requested = request.form.get("use_coins", type=int) or 0
+        coins_used = 0
+        discount_amount = 0.0
+        wallet_phone = verified_phone()
+        if coins_requested > 0:
+            if not wallet_phone or wallet_phone != user_phone:
+                errors.append("Verify this phone number (via My Requests) to use its Match Coins.")
+            else:
+                max_coins_by_value = int(unlock_price / coin_value_inr())
+                coins_used = max(0, min(coins_requested, get_wallet_balance(wallet_phone), max_coins_by_value))
+                discount_amount = round(coins_used * coin_value_inr(), 2)
+
         proof_file = request.files.get("payment_proof")
         proof_name = None
         if not proof_file or not proof_file.filename:
@@ -1409,15 +1555,21 @@ def unlock(profile_code):
                 flash(e, "error")
             return render_template("unlock.html", profile=profile)
 
+        if coins_used > 0:
+            if not debit_coins(wallet_phone, coins_used, "unlock_redeem", profile["profile_code"]):
+                flash("Your coin balance changed — please retry.", "error")
+                return render_template("unlock.html", profile=profile)
+
         request_code = new_request_code()
         db.execute(
             """
             INSERT INTO unlock_requests
             (request_code, profile_id, user_name, user_phone, payment_proof_name, message,
-             viewer_declaration, status, requested_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, 'pending', ?)
+             viewer_declaration, coins_used, discount_amount, status, requested_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 'pending', ?)
             """,
-            (request_code, profile["id"], user_name, user_phone, proof_name, message, datetime.now().isoformat()),
+            (request_code, profile["id"], user_name, user_phone, proof_name, message,
+             coins_used, discount_amount, datetime.now().isoformat()),
         )
         db.commit()
 
@@ -1425,6 +1577,7 @@ def unlock(profile_code):
             "New payment request",
             f"{user_name or 'A customer'} ({user_phone}) submitted payment proof for "
             f"profile {profile['profile_code']} ({profile['name']}). Request code: {request_code}. "
+            f"{'Coins used: ' + str(coins_used) + f' (₹{discount_amount} off). ' if coins_used else ''}"
             f"Review: {request.url_root.rstrip('/')}{url_for('admin_requests')}",
         )
 
@@ -1524,22 +1677,44 @@ def package_checkout():
             except ImageValidationError as e:
                 errors.append(str(e))
 
+        # Match Coins redemption for the whole package — same rule as single
+        # unlock: only against the OTP-verified session phone.
+        package_price = float(get_setting("package_price", "149"))
+        coins_requested = request.form.get("use_coins", type=int) or 0
+        coins_used = 0
+        discount_amount = 0.0
+        wallet_phone = verified_phone()
+        if coins_requested > 0:
+            if not wallet_phone or wallet_phone != user_phone:
+                errors.append("Verify this phone number (via My Requests) to use its Match Coins.")
+            else:
+                max_coins_by_value = int(package_price / coin_value_inr())
+                coins_used = max(0, min(coins_requested, get_wallet_balance(wallet_phone), max_coins_by_value))
+                discount_amount = round(coins_used * coin_value_inr(), 2)
+
         if errors:
             for e in errors:
                 flash(e, "error")
             return render_template("package_checkout.html", profiles=profiles, size=size)
 
         package_code = new_request_code()
-        for profile in profiles:
+
+        if coins_used > 0:
+            if not debit_coins(wallet_phone, coins_used, "package_redeem", package_code):
+                flash("Your coin balance changed — please retry.", "error")
+                return render_template("package_checkout.html", profiles=profiles, size=size)
+
+        for i, profile in enumerate(profiles):
             request_code = new_request_code()
             db.execute(
                 """
                 INSERT INTO unlock_requests
                 (request_code, profile_id, user_name, user_phone, payment_proof_name, message,
-                 viewer_declaration, status, requested_at, package_code)
-                VALUES (?, ?, ?, ?, ?, ?, 1, 'pending', ?, ?)
+                 viewer_declaration, coins_used, discount_amount, status, requested_at, package_code)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 'pending', ?, ?)
                 """,
                 (request_code, profile["id"], user_name, user_phone, proof_name, message,
+                 coins_used if i == 0 else 0, discount_amount if i == 0 else 0.0,
                  datetime.now().isoformat(), package_code),
             )
         db.commit()
@@ -1550,6 +1725,7 @@ def package_checkout():
             "New PACKAGE payment request",
             f"{user_name or 'A customer'} ({user_phone}) submitted payment proof for a "
             f"{size}-profile package ({profile_list}). Package code: {package_code}. "
+            f"{'Coins used: ' + str(coins_used) + f' (₹{discount_amount} off). ' if coins_used else ''}"
             f"Review: {request.url_root.rstrip('/')}{url_for('admin_requests')}",
         )
 
@@ -2892,11 +3068,14 @@ def admin_decide_request(request_id, action):
         abort(400)
     db = get_db()
     new_status = "unlocked" if action == "unlock" else "rejected"
+    row = db.execute("SELECT * FROM unlock_requests WHERE id = ?", (request_id,)).fetchone()
     db.execute(
         "UPDATE unlock_requests SET status = ?, decided_at = ? WHERE id = ?",
         (new_status, datetime.now().isoformat(), request_id),
     )
     db.commit()
+    if action == "reject" and row and row["coins_used"]:
+        refund_coins(row["user_phone"], row["coins_used"], "unlock_reject_refund", str(request_id))
     log_admin_action(f"request_{action}", str(request_id))
     flash(f"Request marked as {new_status}.", "success")
     return redirect(url_for("admin_requests"))
@@ -2909,11 +3088,16 @@ def admin_decide_package(package_code, action):
         abort(400)
     db = get_db()
     new_status = "unlocked" if action == "unlock" else "rejected"
+    rows = db.execute("SELECT * FROM unlock_requests WHERE package_code = ?", (package_code,)).fetchall()
     db.execute(
         "UPDATE unlock_requests SET status = ?, decided_at = ? WHERE package_code = ?",
         (new_status, datetime.now().isoformat(), package_code),
     )
     db.commit()
+    if action == "reject":
+        for row in rows:
+            if row["coins_used"]:
+                refund_coins(row["user_phone"], row["coins_used"], "package_reject_refund", package_code)
     log_admin_action(f"package_{action}", package_code)
     flash(f"Package marked as {new_status}.", "success")
     return redirect(url_for("admin_requests"))
@@ -2994,7 +3178,13 @@ def admin_decide_registration(reg_id, action):
     )
     db.commit()
     log_admin_action("registration_approve", f"{reg_id} -> {profile_code}")
-    flash(f"Registration approved — profile {profile_code} is now live. You can review/edit it any time.", "success")
+
+    bonus = registration_bonus_coins()
+    if bonus > 0:
+        credit_coins(row["phone"], bonus, "registration_bonus", profile_code)
+
+    flash(f"Registration approved — profile {profile_code} is now live. You can review/edit it any time. "
+          f"{bonus} Match Coins credited to {row['phone']}.", "success")
     return redirect(url_for("admin_registrations"))
 
 
@@ -3043,7 +3233,7 @@ SETTINGS_TEXT_FIELDS = [
     "brand_location", "unlock_price", "package_price", "package_size", "package_offer_enabled",
     "registration_price", "upi_id",
     "primary_color", "secondary_color", "accent_color", "hero_heading", "hero_subheading",
-    "footer_text",
+    "footer_text", "coin_value_inr", "registration_bonus_coins",
 ]
 
 # Background images the admin can upload from Appearance Settings without
@@ -3486,6 +3676,19 @@ def shop_checkout():
         if not consent:
             errors.append("Please confirm you have completed the payment.")
 
+        # Match Coins redemption — only against the OTP-verified session phone.
+        coins_requested = request.form.get("use_coins", type=int) or 0
+        coins_used = 0
+        discount_amount = 0.0
+        wallet_phone = verified_phone()
+        if coins_requested > 0:
+            if not wallet_phone or wallet_phone != customer_phone:
+                errors.append("Verify this phone number (via My Requests) to use its Match Coins.")
+            else:
+                max_coins_by_value = int(total / coin_value_inr()) if coin_value_inr() > 0 else 0
+                coins_used = max(0, min(coins_requested, get_wallet_balance(wallet_phone), max_coins_by_value))
+                discount_amount = round(coins_used * coin_value_inr(), 2)
+
         proof_file = request.files.get("payment_proof")
         proof_name = None
         if not proof_file or not proof_file.filename:
@@ -3508,13 +3711,20 @@ def shop_checkout():
                 flash(e, "error")
             return render_template("shop_checkout.html", items=items, total=total)
 
+        if coins_used > 0:
+            if not debit_coins(wallet_phone, coins_used, "shop_redeem", None):
+                flash("Your coin balance changed — please retry.", "error")
+                return render_template("shop_checkout.html", items=items, total=total)
+
         order_code = "ORD" + secrets.token_hex(4).upper()
         now = datetime.now().isoformat()
+        final_total = round(max(total - discount_amount, 0), 2)
         cur = db.execute(
             "INSERT INTO shop_orders (order_code, customer_name, customer_phone, customer_address, "
-            "total_amount, payment_status, order_status, payment_proof_name, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?)",
-            (order_code, customer_name, customer_phone, customer_address, total, proof_name, now, now),
+            "total_amount, payment_status, order_status, payment_proof_name, coins_used, discount_amount, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?, ?, ?)",
+            (order_code, customer_name, customer_phone, customer_address, final_total, proof_name,
+             coins_used, discount_amount, now, now),
         )
         order_id = cur.lastrowid
 
@@ -3541,7 +3751,8 @@ def shop_checkout():
 
         notify_admin(
             "New Islamic Shop order",
-            f"{customer_name} ({customer_phone}) placed order {order_code} for ₹{total}. "
+            f"{customer_name} ({customer_phone}) placed order {order_code} for ₹{final_total}"
+            f"{f' (after ₹{discount_amount} coin discount, {coins_used} coins used)' if coins_used else ''}. "
             f"Review: {request.url_root.rstrip('/')}{url_for('admin_shop_orders')}",
         )
         return redirect(url_for("shop_order_status", order_code=order_code))
@@ -3560,8 +3771,194 @@ def shop_order_status(order_code):
 
 
 # ======================================================================
-# ADMIN — ISLAMIC SHOP: CATEGORIES
+# ADMIN — SUCCESS STORY TESTIMONIALS (homepage showcase)
 # ======================================================================
+TESTIMONIALS_DIR = os.path.join(BASE_DIR, "static", "testimonials")
+os.makedirs(TESTIMONIALS_DIR, exist_ok=True)
+
+
+@app.route("/admin/testimonials")
+@admin_required
+def admin_testimonials():
+    db = get_db()
+    rows = db.execute("SELECT * FROM testimonials ORDER BY is_featured DESC, sort_order, created_at DESC").fetchall()
+    return render_template("admin_testimonials.html", rows=rows)
+
+
+@app.route("/admin/testimonials/add", methods=["GET", "POST"])
+@admin_required
+def admin_testimonial_add():
+    if request.method == "POST":
+        groom_name = request.form.get("groom_name", "").strip()[:100]
+        bride_name = request.form.get("bride_name", "").strip()[:100]
+        if not groom_name or not bride_name:
+            flash("Groom and Bride names are required.", "error")
+            return render_template("admin_testimonial_form.html", t=None)
+
+        photo_name = None
+        photo_file = request.files.get("photo")
+        if photo_file and photo_file.filename:
+            try:
+                photo_name = save_generic_image(photo_file, TESTIMONIALS_DIR, max_dim=1000)
+            except ImageValidationError as e:
+                flash(f"Photo not saved: {e}", "error")
+
+        db = get_db()
+        db.execute(
+            "INSERT INTO testimonials (groom_name, bride_name, event_date, photo_filename, rating, "
+            "short_quote, full_story, is_featured, is_approved, sort_order, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+            (groom_name, bride_name, request.form.get("event_date", "").strip(), photo_name,
+             request.form.get("rating", 5, type=int) or 5, request.form.get("short_quote", "").strip()[:300],
+             request.form.get("full_story", "").strip()[:3000],
+             1 if request.form.get("is_featured") == "1" else 0,
+             request.form.get("sort_order", 0, type=int) or 0, datetime.now().isoformat()),
+        )
+        db.commit()
+        log_admin_action("add_testimonial", f"{groom_name} & {bride_name}")
+        flash("Success story added.", "success")
+        return redirect(url_for("admin_testimonials"))
+
+    return render_template("admin_testimonial_form.html", t=None)
+
+
+@app.route("/admin/testimonials/<int:t_id>/edit", methods=["GET", "POST"])
+@admin_required
+def admin_testimonial_edit(t_id):
+    db = get_db()
+    t = db.execute("SELECT * FROM testimonials WHERE id = ?", (t_id,)).fetchone()
+    if not t:
+        abort(404)
+
+    if request.method == "POST":
+        groom_name = request.form.get("groom_name", "").strip()[:100]
+        bride_name = request.form.get("bride_name", "").strip()[:100]
+        if not groom_name or not bride_name:
+            flash("Groom and Bride names are required.", "error")
+            return render_template("admin_testimonial_form.html", t=t)
+
+        photo_name = t["photo_filename"]
+        photo_file = request.files.get("photo")
+        if photo_file and photo_file.filename:
+            try:
+                photo_name = save_generic_image(photo_file, TESTIMONIALS_DIR, max_dim=1000)
+                if t["photo_filename"]:
+                    delete_file_quietly(TESTIMONIALS_DIR, t["photo_filename"])
+            except ImageValidationError as e:
+                flash(f"Photo not updated: {e}", "error")
+
+        db.execute(
+            "UPDATE testimonials SET groom_name=?, bride_name=?, event_date=?, photo_filename=?, rating=?, "
+            "short_quote=?, full_story=?, is_featured=?, sort_order=? WHERE id=?",
+            (groom_name, bride_name, request.form.get("event_date", "").strip(), photo_name,
+             request.form.get("rating", 5, type=int) or 5, request.form.get("short_quote", "").strip()[:300],
+             request.form.get("full_story", "").strip()[:3000],
+             1 if request.form.get("is_featured") == "1" else 0,
+             request.form.get("sort_order", 0, type=int) or 0, t_id),
+        )
+        db.commit()
+        log_admin_action("edit_testimonial", f"{groom_name} & {bride_name}")
+        flash("Success story updated.", "success")
+        return redirect(url_for("admin_testimonials"))
+
+    return render_template("admin_testimonial_form.html", t=t)
+
+
+@app.route("/admin/testimonials/<int:t_id>/toggle-approved", methods=["POST"])
+@admin_required
+def admin_testimonial_toggle_approved(t_id):
+    db = get_db()
+    t = db.execute("SELECT * FROM testimonials WHERE id = ?", (t_id,)).fetchone()
+    if t:
+        db.execute("UPDATE testimonials SET is_approved = ? WHERE id = ?", (0 if t["is_approved"] else 1, t_id))
+        db.commit()
+        log_admin_action("toggle_testimonial_approved", str(t_id))
+    return redirect(url_for("admin_testimonials"))
+
+
+@app.route("/admin/testimonials/<int:t_id>/delete", methods=["POST"])
+@admin_required
+def admin_testimonial_delete(t_id):
+    db = get_db()
+    t = db.execute("SELECT * FROM testimonials WHERE id = ?", (t_id,)).fetchone()
+    if t:
+        if t["photo_filename"]:
+            delete_file_quietly(TESTIMONIALS_DIR, t["photo_filename"])
+        db.execute("DELETE FROM testimonials WHERE id = ?", (t_id,))
+        db.commit()
+        log_admin_action("delete_testimonial", str(t_id))
+        flash("Success story deleted.", "success")
+    return redirect(url_for("admin_testimonials"))
+
+
+# ======================================================================
+# ADMIN — NOTIFICATION BROADCAST ENGINE
+# Lightweight, DB-polled banner/bell system (no push service / 3rd party
+# needed) — the client polls /api/notifications every 60s while on-site.
+# ======================================================================
+@app.route("/admin/notifications", methods=["GET", "POST"])
+@admin_required
+def admin_notifications():
+    db = get_db()
+    if request.method == "POST":
+        action = request.form.get("action", "create")
+        if action == "create":
+            title = request.form.get("title", "").strip()[:120]
+            body = request.form.get("body", "").strip()[:500]
+            if not title or not body:
+                flash("Title and message are required.", "error")
+            else:
+                expires_days = request.form.get("expires_days", type=int)
+                expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat() if expires_days else None
+                db.execute(
+                    "INSERT INTO notifications (title, body, target_group, action_url, is_active, created_at, expires_at) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?)",
+                    (title, body, request.form.get("target_group", "all"),
+                     request.form.get("action_url", "").strip()[:300] or None,
+                     datetime.now().isoformat(), expires_at),
+                )
+                db.commit()
+                log_admin_action("create_notification", title)
+                flash("Notification pushed live.", "success")
+        elif action == "deactivate":
+            db.execute("UPDATE notifications SET is_active = 0 WHERE id = ?", (request.form.get("notif_id"),))
+            db.commit()
+            flash("Notification withdrawn.", "success")
+        elif action == "delete":
+            db.execute("DELETE FROM notifications WHERE id = ?", (request.form.get("notif_id"),))
+            db.commit()
+            flash("Notification deleted.", "success")
+        return redirect(url_for("admin_notifications"))
+
+    rows = db.execute("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50").fetchall()
+    return render_template("admin_notifications.html", rows=rows)
+
+
+@app.route("/api/notifications")
+def api_notifications():
+    """Polled by the client-side bell/toast. target_group is a coarse,
+    non-PII segmentation: 'new_users' = never verified a phone on this
+    device/session, 'unregistered' = same idea (kept as a distinct option
+    for the admin's messaging intent), 'all' = everyone."""
+    db = get_db()
+    now = datetime.now().isoformat()
+    is_returning = bool(verified_phone())
+    rows = db.execute(
+        "SELECT * FROM notifications WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > ?) "
+        "ORDER BY created_at DESC LIMIT 5",
+        (now,),
+    ).fetchall()
+    visible = []
+    for r in rows:
+        if r["target_group"] == "new_users" and is_returning:
+            continue
+        if r["target_group"] == "unregistered" and is_returning:
+            continue
+        visible.append({"id": r["id"], "title": r["title"], "body": r["body"], "action_url": r["action_url"]})
+    return jsonify({"notifications": visible})
+
+
+
 @app.route("/admin/shop/categories", methods=["GET", "POST"])
 @admin_required
 def admin_shop_categories():
@@ -3870,6 +4267,8 @@ def admin_shop_order_update(order_id):
                 db.execute("UPDATE shop_variants SET stock = stock + ? WHERE id = ?", (item["qty"], item["variant_id"]))
             elif item["product_id"]:
                 db.execute("UPDATE shop_products SET stock = stock + ? WHERE id = ?", (item["qty"], item["product_id"]))
+        if order["coins_used"]:
+            refund_coins(order["customer_phone"], order["coins_used"], "shop_cancel_refund", order["order_code"])
 
     db.execute("UPDATE shop_orders SET order_status = ?, payment_status = ?, updated_at = ? WHERE id = ?",
                (new_order_status, new_payment_status, datetime.now().isoformat(), order_id))

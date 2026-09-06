@@ -34,8 +34,22 @@
             <input type="text" id="user_name" name="user_name" placeholder="Your full name">
 
             <label for="user_phone">Your Mobile Number *</label>
-            <input type="tel" id="user_phone" name="user_phone" placeholder="10-digit mobile number" pattern="[6-9][0-9]{9}" required>
+            <input type="tel" id="user_phone" name="user_phone" placeholder="10-digit mobile number" pattern="[6-9][0-9]{9}" value="{{ session.get('verified_phone','') }}" required>
             <div class="helptext">This number becomes how you check status later — you'll verify it with an OTP.</div>
+
+            {% if wallet_balance > 0 %}
+            <div class="coin-redeem-box">
+                <label>
+                    <input type="checkbox" id="useCoinsCheck" onchange="document.getElementById('coinsAmountRow').style.display=this.checked?'flex':'none'; document.getElementById('use_coins').value=this.checked?document.getElementById('use_coins').max:0;">
+                    <span>🟡 Use my Match Coins — you have {{ wallet_balance }} coins (₹{{ '%.0f'|format(wallet_balance * coin_value_inr) }} value)</span>
+                </label>
+                <div id="coinsAmountRow" style="display:none; align-items:center; gap:8px; margin-top:10px;">
+                    <span style="font-size:13px;">Coins to use:</span>
+                    <input type="number" name="use_coins" id="use_coins" min="0" max="{{ [wallet_balance, (unlock_price|float / coin_value_inr)|int]|min }}" value="0" style="width:80px; min-height:34px; padding:4px 8px;">
+                </div>
+                <div class="helptext">Only works if the mobile number above matches your OTP-verified number (verify via "My Requests" first).</div>
+            </div>
+            {% endif %}
 
             <label for="payment_proof">Payment Screenshot *</label>
             <input type="file" id="payment_proof" name="payment_proof" accept="image/*" required data-autoresize>
@@ -54,7 +68,10 @@
                 <span><b>Declaration:</b> I am viewing this profile for genuine matrimonial purposes only. I will not screenshot, save, share, or redistribute this profile's photo or details outside genuine consideration, and I understand doing so violates our <a href="{{ url_for('terms') }}" target="_blank">Terms</a>.</span>
             </label>
 
-            <button class="btn btn-gold btn-block" type="submit" style="margin-top:22px;">Submit Unlock Request</button>
+            <button class="btn btn-gold btn-heart-lock btn-block" type="submit" style="margin-top:22px;">
+                {% include "_heart_lock_icon.html" %}
+                <span class="btn-label">Submit Unlock Request</span>
+            </button>
         </form>
 
         <a class="btn btn-outline btn-block" style="margin-top:14px;"

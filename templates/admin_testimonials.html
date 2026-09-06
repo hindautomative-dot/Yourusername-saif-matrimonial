@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Success Stories — Admin{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<section class="container">
+    <h1 class="section-title">Success Stories / Testimonials</h1>
+    <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+        <a class="btn btn-outline btn-sm" href="{{ url_for('admin_dashboard') }}">← Dashboard</a>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('admin_testimonial_add') }}">+ Add Success Story</a>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <tr><th>Photo</th><th>Couple</th><th>Rating</th><th>Featured</th><th>Approved (Live)</th><th></th></tr>
+            {% for t in rows %}
+            <tr>
+                <td>
+                    {% if t.photo_filename %}<img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" style="width:44px; height:44px; object-fit:cover; border-radius:50%;">
+                    {% else %}—{% endif %}
+                </td>
+                <td>{{ t.groom_name }} &amp; {{ t.bride_name }}<br><span class="muted" style="font-size:12px;">{{ t.event_date or '' }}</span></td>
+                <td>{{ '⭐' * t.rating }}</td>
+                <td>{{ '✓' if t.is_featured else '—' }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('admin_testimonial_toggle_approved', t_id=t.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm {{ 'btn-outline' if t.is_approved else 'btn-primary' }}" type="submit">{{ 'Hide' if t.is_approved else 'Show on Site' }}</button>
+                    </form>
+                </td>
+                <td style="display:flex; gap:6px;">
+                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_testimonial_edit', t_id=t.id) }}">Edit</a>
+                    <form method="post" action="{{ url_for('admin_testimonial_delete', t_id=t.id) }}" onsubmit="return confirm('Delete this success story?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="muted">No success stories yet.</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+</section>
+{% endblock %}

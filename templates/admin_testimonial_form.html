@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if t else 'Add' }} Success Story — Admin{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+<section class="container-narrow">
+    <a class="btn btn-outline btn-sm" href="{{ url_for('admin_testimonials') }}" style="margin-bottom:16px; display:inline-block;">← Back</a>
+    <h1 class="section-title">{{ 'Edit' if t else 'Add' }} Success Story</h1>
+
+    <form method="post" enctype="multipart/form-data" class="card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="display:flex; gap:14px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:160px;">
+                <label>Groom Name *</label>
+                <input type="text" name="groom_name" value="{{ t.groom_name if t else '' }}" required>
+            </div>
+            <div style="flex:1; min-width:160px;">
+                <label>Bride Name *</label>
+                <input type="text" name="bride_name" value="{{ t.bride_name if t else '' }}" required>
+            </div>
+        </div>
+
+        <label>Wedding / Engagement Date</label>
+        <input type="text" name="event_date" placeholder="e.g. March 2026" value="{{ t.event_date if t else '' }}">
+
+        <label>Couple Photo</label>
+        <input type="file" name="photo" accept="image/*">
+        {% if t and t.photo_filename %}
+        <img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" style="width:80px; height:80px; object-fit:cover; border-radius:50%; margin-top:8px;">
+        {% endif %}
+
+        <label>Star Rating</label>
+        <select name="rating">
+            {% for i in range(5,0,-1) %}<option value="{{ i }}" {{ 'selected' if t and t.rating == i or (not t and i==5) }}>{{ '⭐'*i }} ({{ i }})</option>{% endfor %}
+        </select>
+
+        <label>Short Quote (shown on card)</label>
+        <textarea name="short_quote" rows="2">{{ t.short_quote if t else '' }}</textarea>
+
+        <label>Full Story (shown in "Read Full Journey" modal)</label>
+        <textarea name="full_story" rows="6">{{ t.full_story if t else '' }}</textarea>
+
+        <label>Sort Order (lower shows first)</label>
+        <input type="number" name="sort_order" value="{{ t.sort_order if t else 0 }}">
+
+        <label class="checkbox-row">
+            <input type="checkbox" name="is_featured" value="1" {{ 'checked' if t and t.is_featured }}>
+            <span>Featured (shown first / highlighted)</span>
+        </label>
+
+        <button class="btn btn-primary btn-block" type="submit" style="margin-top:20px;">{{ 'Save Changes' if t else 'Add Success Story' }}</button>
+    </form>
+</section>
+{% endblock %}

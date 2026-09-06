@@ -65,6 +65,15 @@
         <input type="text" name="registration_price" value="{{ settings.registration_price }}">
         <div class="helptext">Shown as the "Register Yourself" self-registration price across the site.</div>
 
+        <h3 class="section-label" style="margin-top:24px;">Match Coins Wallet</h3>
+        <label>Coins Given at Registration Approval</label>
+        <input type="number" name="registration_bonus_coins" min="0" value="{{ settings.registration_bonus_coins }}">
+        <div class="helptext">Credited to the user's wallet the moment you approve their self-registration.</div>
+
+        <label>Value per Coin (₹)</label>
+        <input type="text" name="coin_value_inr" value="{{ settings.coin_value_inr }}">
+        <div class="helptext">E.g. 2.2 → 5 coins = ₹11 (matches the "100% value back" registration hook). Users can redeem coins as a discount at unlock/package/shop checkout, but only after verifying that phone number via My Requests.</div>
+
         <label>UPI ID</label>
         <input type="text" name="upi_id" value="{{ settings.upi_id }}">
 
