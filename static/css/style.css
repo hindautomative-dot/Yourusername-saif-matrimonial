@@ -1044,3 +1044,243 @@ th { background: #f3f0e6; color: var(--emerald-dark); font-size: 12.5px; text-tr
     .hand-right { right: calc(50% - 90px); }
     .hand-left, .hand-right { width: 100px; height: 75px; }
 }
+
+/* ============================================================================
+   VISUAL REFRESH PASS — premium editorial polish
+   Purely additive: reuses existing --emerald/--gold/--ivory/etc. tokens so
+   admin-configured brand colors (Settings → Appearance) still work exactly
+   as before. Nothing here touches layout structure, forms, or JS behaviour —
+   nothing below this point should ever change what a route returns, only how
+   it looks.
+   ============================================================================ */
+
+:root {
+    --shadow-soft: 0 10px 30px rgba(20,30,25,.08);
+    --shadow-lift: 0 22px 48px rgba(20,30,25,.16);
+    --shadow-gold: 0 10px 28px color-mix(in srgb, var(--gold) 35%, transparent);
+    --glass-bg: color-mix(in srgb, var(--card) 68%, transparent);
+    --glass-border: color-mix(in srgb, var(--gold) 30%, transparent);
+    --radius-xl: 24px;
+}
+
+/* Smoother global rhythm */
+body { line-height: 1.5; letter-spacing: .1px; }
+::selection { background: color-mix(in srgb, var(--gold) 55%, transparent); color: var(--emerald-dark); }
+html { scroll-behavior: smooth; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--ivory); }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--gold) 55%, var(--ivory)); border-radius: 10px; border: 2px solid var(--ivory); }
+
+/* ---------------- Eyebrow / section title accent ---------------- */
+.section-title {
+    position: relative; font-size: 30px; letter-spacing: -.2px;
+    display: inline-block; padding-bottom: 14px;
+}
+.section-title::after {
+    content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 56px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--gold), color-mix(in srgb, var(--gold) 40%, var(--emerald)));
+}
+.section-title.center { display: block; text-align: center; }
+.section-title.center::after { left: 50%; transform: translateX(-50%); }
+.container > .section-title + .section-sub { margin-top: 4px; }
+
+/* ---------------- Header: richer glass + glow hairline ---------------- */
+.site-header {
+    backdrop-filter: blur(20px) saturate(140%); -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border-bottom: 1px solid transparent;
+    background-image:
+        var(--nav-bg-image, none),
+        linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold) 70%, transparent), transparent),
+        linear-gradient(180deg, rgba(7,62,47,.97), rgba(11,90,68,.94));
+    background-size: cover, 100% 1px, cover;
+    background-position: center, bottom, center;
+    background-repeat: no-repeat, no-repeat, no-repeat;
+}
+.brand-mark {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent), var(--shadow-gold);
+}
+.brand-logo-img { border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent); }
+.nav-desktop a::after { background: linear-gradient(90deg, var(--gold), #fff); height: 2px; }
+.nav-cta {
+    box-shadow: 0 6px 16px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.35);
+    letter-spacing: .15px;
+}
+
+/* ---------------- Hero: editorial redesign ---------------- */
+.hero { background-color: var(--ivory); }
+.hero::before { width: 340px; height: 340px; filter: blur(6px); }
+.hero::after { width: 240px; height: 240px; filter: blur(6px); }
+.hero-inner { padding: 84px 24px 70px; }
+.hero h1 {
+    font-family: var(--font-heading, Georgia, serif);
+    font-size: clamp(34px, 4.4vw, 52px); font-weight: 700; letter-spacing: -.5px;
+    background: linear-gradient(100deg, var(--emerald-dark) 30%, var(--emerald) 55%, color-mix(in srgb, var(--gold) 70%, var(--emerald)) 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: var(--emerald-dark);
+}
+.hero-trust-line {
+    background: color-mix(in srgb, var(--emerald) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--emerald) 18%, transparent);
+    border-radius: 999px; padding: 8px 16px; display: inline-flex; width: fit-content;
+}
+.hero-panel {
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lift), inset 0 1px 0 rgba(255,255,255,.12);
+    border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+}
+.hero-panel h3 { font-family: var(--font-heading, Georgia, serif); }
+.hero-price {
+    background: linear-gradient(100deg, var(--gold), #fff6df 45%, var(--gold));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    text-shadow: 0 2px 24px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+
+/* ---------------- Buttons: extra shine + glow ---------------- */
+.btn { letter-spacing: .15px; }
+.btn-primary { box-shadow: 0 8px 22px color-mix(in srgb, var(--emerald) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.25); }
+.btn-primary:hover { box-shadow: 0 12px 28px color-mix(in srgb, var(--emerald) 55%, transparent); }
+.btn-gold { box-shadow: var(--shadow-gold), inset 0 1px 0 rgba(255,255,255,.4); }
+.btn-gold:hover { box-shadow: 0 14px 30px color-mix(in srgb, var(--gold) 50%, transparent); }
+.btn-outline:hover { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, #fff); }
+
+/* ---------------- Card language: glass + top accent + lift ---------------- */
+.trust-card, .step-card, .pricing-card, .testimonial-card, .product-card, .card {
+    border-radius: var(--radius-xl) !important;
+    transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease, border-color .3s ease;
+}
+.trust-card, .step-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(180deg, var(--card), color-mix(in srgb, var(--ivory) 60%, var(--card)));
+}
+.trust-card::before, .step-card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--gold), var(--emerald));
+    transform: scaleX(0); transform-origin: left; transition: transform .35s ease;
+}
+.trust-card:hover::before, .step-card:hover::before { transform: scaleX(1); }
+.trust-card:hover, .step-card:hover {
+    transform: translateY(-6px) scale(1.01); box-shadow: var(--shadow-lift);
+}
+.trust-card .icon {
+    width: 46px; height: 46px; border-radius: 14px; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(150deg, color-mix(in srgb, var(--emerald) 14%, transparent), color-mix(in srgb, var(--gold) 18%, transparent));
+    font-size: 20px; margin-bottom: 14px;
+}
+.step-num {
+    background: linear-gradient(150deg, var(--gold), color-mix(in srgb, var(--gold) 55%, var(--emerald)));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    font-family: var(--font-heading, Georgia, serif); font-weight: 700; font-size: 30px; opacity: 1;
+}
+
+/* Profile cards — emerald/gold badge language, softer photo frame */
+.profile-card {
+    border-radius: var(--radius-xl) !important; overflow: hidden;
+    box-shadow: var(--shadow-soft);
+}
+.profile-card:hover {
+    transform: translateY(-6px); box-shadow: var(--shadow-lift);
+    border-color: color-mix(in srgb, var(--gold) 45%, transparent) !important;
+}
+.profile-photo::after {
+    content: ""; position: absolute; inset: auto 0 0 0; height: 55%; pointer-events: none;
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,.38));
+}
+.verified-tick {
+    background: linear-gradient(145deg, var(--emerald), var(--emerald-dark)) !important;
+    color: var(--gold) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 55%, transparent), 0 4px 10px rgba(0,0,0,.28) !important;
+}
+.badge-verified {
+    background: color-mix(in srgb, var(--emerald) 14%, transparent) !important;
+    color: var(--emerald-dark) !important;
+    border: 1px solid color-mix(in srgb, var(--emerald) 30%, transparent);
+}
+.photo-lock-badge { backdrop-filter: blur(3px); }
+
+/* Pricing cards — clearer hierarchy, glowing featured tier */
+.pricing-card { box-shadow: var(--shadow-soft); }
+.pricing-card:hover { box-shadow: var(--shadow-lift); }
+.pricing-card.featured {
+    border: 1.5px solid transparent;
+    background:
+        linear-gradient(var(--card), var(--card)) padding-box,
+        linear-gradient(150deg, var(--gold), var(--emerald), var(--gold)) border-box;
+    box-shadow: var(--shadow-lift), 0 0 0 6px color-mix(in srgb, var(--gold) 10%, transparent);
+}
+.pricing-tag {
+    background: linear-gradient(100deg, var(--gold), color-mix(in srgb, var(--gold) 55%, var(--emerald))) !important;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+.pricing-card .price {
+    background: linear-gradient(100deg, var(--emerald-dark), var(--emerald));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* Register CTA banner — richer depth */
+.register-section { box-shadow: var(--shadow-lift); }
+.register-price-card { backdrop-filter: blur(8px); border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent); }
+
+/* Testimonials — quote flourish */
+.testimonial-card {
+    box-shadow: var(--shadow-soft); position: relative;
+}
+.testimonial-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-lift); }
+.testimonial-card.featured { border-color: color-mix(in srgb, var(--gold) 50%, transparent) !important; }
+.testimonial-quote { position: relative; }
+.testimonial-quote::before {
+    content: "“"; font-family: var(--font-heading, Georgia, serif); font-size: 46px; color: color-mix(in srgb, var(--gold) 60%, transparent);
+    line-height: 0; display: block; margin-bottom: 4px;
+}
+.testimonial-photo-wrap {
+    box-shadow: 0 0 0 3px var(--card), 0 0 0 5px color-mix(in srgb, var(--gold) 55%, transparent), var(--shadow-soft);
+}
+
+/* Product cards (shop) */
+.product-card { box-shadow: var(--shadow-soft); }
+.product-card:hover { box-shadow: var(--shadow-lift); }
+
+/* Empty state, FAQ, filter bar — soften */
+.empty-state {
+    border: 1.5px dashed color-mix(in srgb, var(--gold) 45%, var(--line)); border-radius: var(--radius-xl);
+    background: color-mix(in srgb, var(--ivory) 60%, var(--card));
+}
+.faq-item { transition: border-color .2s ease, box-shadow .2s ease; }
+.faq-item:hover { border-color: color-mix(in srgb, var(--gold) 40%, var(--line)); box-shadow: var(--shadow-soft); }
+.filter-bar { box-shadow: var(--shadow-soft); }
+
+/* Footer — gold hairline + glow socials */
+.site-footer { position: relative; }
+.site-footer::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+.social-links a:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent); }
+
+/* Heart loader — soft glow ring behind the mark */
+.heart-loader { position: relative; }
+.heart-loader .loading-heart { position: relative; }
+.heart-loader .loading-heart::after {
+    content: ""; position: absolute; inset: -16px; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--gold) 30%, transparent), transparent 70%);
+    animation: heartGlowPulse 1.8s ease-in-out infinite;
+}
+@keyframes heartGlowPulse {
+    0%, 100% { opacity: .5; transform: scale(.9); }
+    50% { opacity: 1; transform: scale(1.15); }
+}
+
+/* Scroll-reveal stagger for card grids (JS just adds .reveal-init/.revealed) */
+.trust-grid .trust-card:nth-child(2), .steps-grid .step-card:nth-child(2), .profile-grid .profile-card:nth-child(3n+2) { transition-delay: .06s; }
+.trust-grid .trust-card:nth-child(3), .steps-grid .step-card:nth-child(3), .profile-grid .profile-card:nth-child(3n+3) { transition-delay: .12s; }
+.trust-grid .trust-card:nth-child(4), .steps-grid .step-card:nth-child(4) { transition-delay: .18s; }
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .heart-loader .loading-heart::after { animation: none; }
+}
+
+/* WebP <picture> wrappers should be visually transparent — they only add
+   a <source>, the <img> inside keeps 100% of its existing sizing rules
+   via normal descendant selectors, this just stops `picture`'s default
+   inline display from adding stray whitespace/gaps. */
+picture { display: contents; }

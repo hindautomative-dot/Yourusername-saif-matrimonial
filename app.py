@@ -754,9 +754,16 @@ def inject_globals():
         package_offer_enabled=s.get("package_offer_enabled", "1") == "1",
         registration_price=s.get("registration_price", "11"),
         upi_id=s.get("upi_id", "yourupi@bank"),
-        primary_color=s.get("primary_color", "#0b5a44"),
-        secondary_color=s.get("secondary_color", "#073e2f"),
-        accent_color=s.get("accent_color", "#c9a86a"),
+        # NOTE: these are fallback values used only when a site has no row
+        # yet in the settings table for that key (i.e. a brand-new install).
+        # An existing live site's actual colors live in the DB and are
+        # changed via Admin → Settings → Appearance, not by editing this
+        # file — see the redesign palette note in the handoff doc for the
+        # exact hex values to paste there if you want the new look on a
+        # site that already has settings saved.
+        primary_color=s.get("primary_color", "#173B35"),
+        secondary_color=s.get("secondary_color", "#4A1824"),
+        accent_color=s.get("accent_color", "#C6A15B"),
         background_color=s.get("background_color", "#faf8f3"),
         card_color=s.get("card_color", "#ffffff"),
         text_color=s.get("text_color", "#262622"),
@@ -1148,6 +1155,19 @@ def _load_validated_image(file_storage):
     return img
 
 
+def _save_webp_sibling(img, dest_dir, jpg_name, quality=78):
+    # Writes a same-named .webp next to an already-saved .jpg/.png, so any
+    # server that can content-negotiate (or a <picture> template) can offer
+    # the smaller format while the original stays as a guaranteed fallback.
+    # Best-effort: a WebP encode failure should never break the upload.
+    try:
+        webp_name = jpg_name.rsplit(".", 1)[0] + ".webp"
+        img.save(os.path.join(dest_dir, webp_name), "WEBP", quality=quality, method=6)
+        return webp_name
+    except Exception:
+        return None
+
+
 def save_profile_photo(file_storage):
     img = _load_validated_image(file_storage)
     if img is None:
@@ -1155,12 +1175,15 @@ def save_profile_photo(file_storage):
 
     original_name = secrets.token_hex(16) + ".jpg"
     img.save(os.path.join(PRIVATE_ORIGINALS_DIR, original_name), "JPEG", quality=88)
+    # No WebP sibling for the private original — it's never served raw,
+    # only ever through the per-viewer watermark pipeline below.
 
     preview = img.copy()
     preview.thumbnail((320, 320))
     preview = preview.filter(ImageFilter.GaussianBlur(radius=14))
     preview_name = secrets.token_hex(16) + ".jpg"
     preview.save(os.path.join(PREVIEW_DIR, preview_name), "JPEG", quality=55)
+    _save_webp_sibling(preview, PREVIEW_DIR, preview_name, quality=60)
 
     return original_name, preview_name
 
@@ -1188,7 +1211,41 @@ def save_generic_image(file_storage, dest_dir, max_dim=1600):
     img.thumbnail((max_dim, max_dim))
     name = secrets.token_hex(12) + ".jpg"
     img.save(os.path.join(dest_dir, name), "JPEG", quality=90)
+    _save_webp_sibling(img, dest_dir, name, quality=80)
     return name
+
+
+def webp_sibling_name(filename):
+    # Same-name .webp companion of a saved .jpg/.png — used by templates
+    # that render a <picture> with a WebP source and this file as fallback.
+    if not filename or "." not in filename:
+        return filename
+    return filename.rsplit(".", 1)[0] + ".webp"
+
+
+app.jinja_env.globals["webp_name"] = webp_sibling_name
+
+
+def webp_variant_url(kind, filename):
+    # Returns the static URL of a filename's .webp sibling ONLY if that
+    # file actually exists on disk — used by <picture><source> tags so we
+    # never point the browser at a WebP that hasn't been generated yet
+    # (older uploads, or images from before WebP support was added).
+    # <picture><source> does not fall back to <img> on a 404, so this
+    # existence check is required, not optional.
+    if not filename:
+        return None
+    kind = kind if kind in ("banners", "testimonials", "shop", "branding", "previews") else None
+    if not kind:
+        return None
+    directory = os.path.join(BASE_DIR, "static", kind)
+    name = webp_sibling_name(filename)
+    if os.path.exists(os.path.join(directory, name)):
+        return url_for("static", filename=f"{kind}/{name}")
+    return None
+
+
+app.jinja_env.globals["webp_url"] = webp_variant_url
 
 
 def delete_file_quietly(directory, filename):
@@ -1196,6 +1253,11 @@ def delete_file_quietly(directory, filename):
         return
     try:
         os.remove(os.path.join(directory, filename))
+    except OSError:
+        pass
+    # Clean up the WebP sibling too, if one was generated for this file.
+    try:
+        os.remove(os.path.join(directory, webp_sibling_name(filename)))
     except OSError:
         pass
 
@@ -1588,11 +1650,20 @@ def profile_preview_image(profile_code):
     profile = db.execute("SELECT * FROM profiles WHERE profile_code = ?", (profile_code,)).fetchone()
     if not profile or not profile["photo_preview_name"]:
         abort(404)
-    resp = send_from_directory(PREVIEW_DIR, profile["photo_preview_name"])
+    serve_name = profile["photo_preview_name"]
+    # Serve the smaller WebP sibling when the browser advertises support
+    # for it and the file actually exists on disk (older previews saved
+    # before WebP generation was added won't have one — falls back to jpg).
+    if "image/webp" in (request.headers.get("Accept") or ""):
+        webp_name = webp_sibling_name(serve_name)
+        if os.path.exists(os.path.join(PREVIEW_DIR, webp_name)):
+            serve_name = webp_name
+    resp = send_from_directory(PREVIEW_DIR, serve_name)
     # Preview filenames are randomly generated on each new upload (never
     # reused), so a much longer cache lifetime is safe: replacing a photo
     # produces a new filename/URL rather than overwriting the old one.
     resp.headers["Cache-Control"] = "public, max-age=2592000, immutable"
+    resp.headers["Vary"] = "Accept"
     return resp
 
 

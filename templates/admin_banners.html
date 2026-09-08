@@ -15,7 +15,7 @@
             <tr><th>Preview</th><th>Slot</th><th>Title</th><th>Active</th><th>Dates</th><th>Actions</th></tr>
             {% for b in banners %}
             <tr>
-                <td><img src="{{ url_for('static', filename='banners/' + b.image_name) }}" style="width:90px; border-radius:8px;"></td>
+                <td><img src="{{ url_for('static', filename='banners/' + b.image_name) }}" style="width:90px; border-radius:8px;" loading="lazy" decoding="async"></td>
                 <td>{{ b.slot }}</td>
                 <td>{{ b.title or '—' }}</td>
                 <td>{{ "Yes" if b.is_active else "No" }}</td>

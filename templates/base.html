@@ -145,7 +145,11 @@
         {% for b in top_banners %}
         <a class="banner-slide top-banner-slot {{ 'active' if loop.first }}" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
             {% if b.title %}<span class="top-banner-tag">Sponsored</span>{% endif %}
-            <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Offer' }}">
+            <picture>
+                {% set _webp = webp_url('banners', b.image_name) %}
+                {% if _webp %}<source type="image/webp" srcset="{{ _webp }}">{% endif %}
+                <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Offer' }}" loading="lazy" decoding="async">
+            </picture>
             <span class="banner-shine"></span>
         </a>
         {% endfor %}

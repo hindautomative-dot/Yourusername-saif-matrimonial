@@ -15,7 +15,7 @@
             {% for t in rows %}
             <tr>
                 <td>
-                    {% if t.photo_filename %}<img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" style="width:44px; height:44px; object-fit:cover; border-radius:50%;">
+                    {% if t.photo_filename %}<img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" style="width:44px; height:44px; object-fit:cover; border-radius:50%;" loading="lazy" decoding="async">
                     {% else %}—{% endif %}
                 </td>
                 <td>{{ t.groom_name }} &amp; {{ t.bride_name }}<br><span class="muted" style="font-size:12px;">{{ t.event_date or '' }}</span></td>

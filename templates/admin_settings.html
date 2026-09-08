@@ -22,14 +22,14 @@
         <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
         {% if settings.logo_image %}
         <div class="helptext">Current logo:</div>
-        <img src="{{ url_for('static', filename='branding/' + settings.logo_image) }}" style="height:44px; margin-top:6px; border-radius:8px;">
+        <img src="{{ url_for('static', filename='branding/' + settings.logo_image) }}" style="height:44px; margin-top:6px; border-radius:8px;" loading="lazy" decoding="async">
         {% endif %}
 
         <label style="margin-top:14px;">Favicon</label>
         <input type="file" name="favicon" accept="image/*">
         {% if settings.favicon_image %}
         <div class="helptext">Current favicon:</div>
-        <img src="{{ url_for('static', filename='branding/' + settings.favicon_image) }}" style="height:32px; margin-top:6px; border-radius:6px;">
+        <img src="{{ url_for('static', filename='branding/' + settings.favicon_image) }}" style="height:32px; margin-top:6px; border-radius:6px;" loading="lazy" decoding="async">
         {% endif %}
 
         <h3 class="section-label">Contact</h3>
@@ -99,7 +99,7 @@
         <div class="helptext">Shown on the Unlock, Package Checkout and Register Yourself payment pages.</div>
         {% if settings.qr_image %}
         <div class="helptext">Current QR code:</div>
-        <img src="{{ url_for('static', filename='branding/' + settings.qr_image) }}" style="height:120px; margin-top:6px; border-radius:8px;">
+        <img src="{{ url_for('static', filename='branding/' + settings.qr_image) }}" style="height:120px; margin-top:6px; border-radius:8px;" loading="lazy" decoding="async">
         {% endif %}
 
         <h3 class="section-label">Appearance — Backgrounds</h3>

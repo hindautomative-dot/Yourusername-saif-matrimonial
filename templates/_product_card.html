@@ -2,7 +2,11 @@
     <div class="product-photo">
         {% set first_img = (p.images or '').split(',')[0] %}
         {% if first_img %}
-        <img src="{{ url_for('static', filename='shop/' + first_img) }}" alt="{{ p.name }}" loading="lazy">
+        <picture>
+            {% set _webp = webp_url('shop', first_img) %}
+            {% if _webp %}<source type="image/webp" srcset="{{ _webp }}">{% endif %}
+            <img src="{{ url_for('static', filename='shop/' + first_img) }}" alt="{{ p.name }}" loading="lazy" decoding="async">
+        </picture>
         {% else %}
         <div class="no-image">No image yet</div>
         {% endif %}

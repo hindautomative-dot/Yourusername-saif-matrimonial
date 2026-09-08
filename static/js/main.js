@@ -111,7 +111,7 @@ document.addEventListener("DOMContentLoaded", function () {
 document.addEventListener("DOMContentLoaded", function () {
     // ---- Gentle scroll-reveal for cards/sections (purely cosmetic, degrades safely) ----
     var revealTargets = document.querySelectorAll(
-        ".trust-card, .step-card, .profile-card, .pricing-card, .hero-panel"
+        ".trust-card, .step-card, .profile-card, .pricing-card, .hero-panel, .testimonial-card, .product-card"
     );
     if ("IntersectionObserver" in window && revealTargets.length) {
         revealTargets.forEach(function (el) { el.classList.add("reveal-init"); });

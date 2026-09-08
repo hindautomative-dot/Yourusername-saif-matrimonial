@@ -14,7 +14,11 @@
             {% set imgs = (product.images or '').split(',') | select | list %}
             <div class="product-gallery-main">
                 {% if imgs %}
-                <img id="mainProductImg" src="{{ url_for('static', filename='shop/' + imgs[0]) }}" alt="{{ product.name }}">
+                <picture>
+                    {% set _webp = webp_url('shop', imgs[0]) %}
+                    {% if _webp %}<source type="image/webp" srcset="{{ _webp }}">{% endif %}
+                    <img id="mainProductImg" src="{{ url_for('static', filename='shop/' + imgs[0]) }}" alt="{{ product.name }}" decoding="async">
+                </picture>
                 {% else %}
                 <div class="no-image" style="height:100%;">No image yet</div>
                 {% endif %}
@@ -22,7 +26,7 @@
             {% if imgs|length > 1 %}
             <div class="product-gallery-thumbs">
                 {% for img in imgs %}
-                <img src="{{ url_for('static', filename='shop/' + img) }}" class="{{ 'active' if loop.first }}" onclick="document.getElementById('mainProductImg').src=this.src; document.querySelectorAll('.product-gallery-thumbs img').forEach(i=>i.classList.remove('active')); this.classList.add('active');">
+                <img src="{{ url_for('static', filename='shop/' + img) }}" class="{{ 'active' if loop.first }}" loading="lazy" decoding="async" onclick="document.getElementById('mainProductImg').src=this.src; document.querySelectorAll('.product-gallery-thumbs img').forEach(i=>i.classList.remove('active')); this.classList.add('active');">
                 {% endfor %}
             </div>
             {% endif %}

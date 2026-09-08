@@ -26,7 +26,11 @@
     <div class="banner-carousel" data-autorotate="4500">
         {% for b in hero_banners %}
         <a class="banner-slide {{ 'active' if loop.first }}" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
-            <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}">
+            <picture>
+                {% set _webp = webp_url('banners', b.image_name) %}
+                {% if _webp %}<source type="image/webp" srcset="{{ _webp }}">{% endif %}
+                <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}" loading="lazy" decoding="async">
+            </picture>
             <span class="banner-shine"></span>
         </a>
         {% endfor %}
@@ -131,7 +135,11 @@
         <div class="testimonial-card {{ 'featured' if t.is_featured }}">
             <div class="testimonial-photo-wrap">
                 {% if t.photo_filename %}
-                <img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" alt="{{ t.groom_name }} &amp; {{ t.bride_name }}">
+                <picture>
+                    {% set _webp = webp_url('testimonials', t.photo_filename) %}
+                    {% if _webp %}<source type="image/webp" srcset="{{ _webp }}">{% endif %}
+                    <img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" alt="{{ t.groom_name }} &amp; {{ t.bride_name }}" loading="lazy" decoding="async">
+                </picture>
                 {% else %}
                 <div class="testimonial-photo-placeholder">{{ t.groom_name[0] }}{{ t.bride_name[0] }}</div>
                 {% endif %}
@@ -252,7 +260,11 @@ function closeTestimonialModal(){
     <div class="banner-carousel" data-autorotate="4800">
         {% for b in mid_banners %}
         <a class="banner-slide {{ 'active' if loop.first }}" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
-            <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}">
+            <picture>
+                {% set _webp = webp_url('banners', b.image_name) %}
+                {% if _webp %}<source type="image/webp" srcset="{{ _webp }}">{% endif %}
+                <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}" loading="lazy" decoding="async">
+            </picture>
             <span class="banner-shine"></span>
         </a>
         {% endfor %}
@@ -311,7 +323,7 @@ function closeTestimonialModal(){
         <a class="profile-card" href="{{ url_for('profile_preview', profile_code=p.profile_code) }}">
             <div class="profile-photo">
                 {% if p.photo_preview_name %}
-                    <img src="{{ url_for('profile_preview_image', profile_code=p.profile_code) }}" alt="Profile preview">
+                    <img src="{{ url_for('profile_preview_image', profile_code=p.profile_code) }}" alt="Profile preview" loading="lazy" decoding="async">
                 {% endif %}
                 {% if p.admin_verified %}<span class="verified-tick" title="Admin Verified">✔</span>{% endif %}
                 <div class="photo-lock-badge">
@@ -369,7 +381,11 @@ function closeTestimonialModal(){
     <div class="banner-carousel" data-autorotate="5200">
         {% for b in footer_banners %}
         <a class="banner-slide {{ 'active' if loop.first }}" href="{{ b.link_url or '#' }}" {{ 'target=_blank rel=noopener' if b.link_url else '' }}>
-            <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}">
+            <picture>
+                {% set _webp = webp_url('banners', b.image_name) %}
+                {% if _webp %}<source type="image/webp" srcset="{{ _webp }}">{% endif %}
+                <img src="{{ url_for('static', filename='banners/' + b.image_name) }}" alt="{{ b.title or 'Banner' }}" loading="lazy" decoding="async">
+            </picture>
             <span class="banner-shine"></span>
         </a>
         {% endfor %}

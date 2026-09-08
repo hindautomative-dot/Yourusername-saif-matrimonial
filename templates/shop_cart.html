@@ -16,7 +16,7 @@
         {% for item in items %}
         <div class="cart-row">
             {% set first_img = (item.product.images or '').split(',')[0] %}
-            {% if first_img %}<img src="{{ url_for('static', filename='shop/' + first_img) }}" alt="{{ item.product.name }}">{% else %}<img alt="">{% endif %}
+            {% if first_img %}<img src="{{ url_for('static', filename='shop/' + first_img) }}" alt="{{ item.product.name }}" loading="lazy" decoding="async">{% else %}<img alt="">{% endif %}
             <div>
                 <div style="font-weight:600; font-size:14.5px;">{{ item.product.name }}</div>
                 {% if item.variant %}<div class="muted" style="font-size:12.5px;">{{ item.variant.size or '' }} {{ item.variant.color or '' }}</div>{% endif %}

@@ -82,7 +82,7 @@
             <a class="profile-card" href="{{ url_for('profile_preview', profile_code=rp.profile_code) }}">
                 <div class="profile-photo" style="height:150px;">
                     {% if rp.photo_preview_name %}
-                    <img src="{{ url_for('profile_preview_image', profile_code=rp.profile_code) }}" alt="Profile preview">
+                    <img src="{{ url_for('profile_preview_image', profile_code=rp.profile_code) }}" alt="Profile preview" loading="lazy" decoding="async">
                     {% endif %}
                     {% if rp.admin_verified %}<span class="verified-tick verified-tick-sm" title="Admin Verified">✔</span>{% endif %}
                     {% if rscore is not none %}<span class="match-score-badge">{{ rscore }}% Match</span>{% endif %}
