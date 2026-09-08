@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ help_shadi_name }} — {{ business_name }}{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card reg-card">
+        <h2 class="serif center" style="color:var(--emerald-dark); margin-top:10px;">{{ help_shadi_name }}</h2>
+        <p class="center" style="font-size:15px; max-width:480px; margin:14px auto; line-height:1.7;">
+            Shaadi sirf ek khwahish nahi, ek zaroorat bhi ho sakti hai. Agar maafi chahiye to maaf kijiye.
+            Agar khushi chahiye to khushi baantiye. Aur agar kisi ki shaadi mein aasani ka sabab ban sakte
+            hain, to ek nek rishta aasaan banane mein madad kijiye.
+        </p>
+
+        <div class="qr-box">
+            {% if qr_image %}
+            <img src="{{ url_for('static', filename='branding/' + qr_image) }}" alt="UPI QR code">
+            {% else %}
+            <img src="{{ url_for('static', filename='upi_qr.png') }}" alt="UPI QR code"
+                 onerror="this.style.display='none'; this.parentElement.innerText='Admin: upload a QR code in Website Settings.';">
+            {% endif %}
+        </div>
+        <div class="upi-id-box">UPI ID: {{ upi_id }}</div>
+
+        <p class="center muted" style="font-size:14.5px; margin-top:14px;">
+            {{ help_shadi_name }}. ₹5 se bhi shuruaat ho sakti hai.
+        </p>
+
+        <div style="text-align:center; margin-top:22px;">
+            <a class="btn btn-gold" href="{{ url_for('help_shadi_register') }}">Apply for Assistance</a>
+        </div>
+
+        <p class="muted center" style="font-size:12.5px; margin-top:18px;">
+            Every application is reviewed manually by our team before any decision is made.
+            Details you share are kept private and are never shown publicly.
+        </p>
+    </div>
+</section>
+
+{% endblock %}

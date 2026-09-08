@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Backup{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card">
+        <h1 class="section-title">Backup</h1>
+        <p class="section-sub">
+            Download a complete backup — the database plus every private photo, payment proof,
+            {{ help_shadi_name }} document, and uploaded banner/logo — as a single zip file to your device.
+        </p>
+
+        <p class="muted" style="font-size:13.5px;">
+            Current database size: <strong>{{ db_size_mb }} MB</strong><br>
+            Server data folder: <code>{{ data_dir }}</code>
+        </p>
+
+        <a class="btn btn-gold btn-block" href="{{ url_for('admin_backup_download') }}" style="margin-top:16px;">
+            Download Full Backup Now
+        </a>
+
+        <div style="margin-top:26px; padding-top:20px; border-top:1px solid var(--line);">
+            <h3 class="section-label">How to actually keep this safe</h3>
+            <ol style="font-size:14px; line-height:1.8; padding-left:20px;">
+                <li>Tap the button above — your browser downloads a <code>.zip</code> file straight to your phone or computer.</li>
+                <li>Move that file somewhere <strong>off this server</strong> — Google Drive, WhatsApp-to-self, email to yourself, a laptop folder. A backup that lives only on the same server it's protecting isn't a real backup.</li>
+                <li>Do this regularly — weekly is a reasonable minimum for a live business; after any big change (price update, new profiles approved) is a good extra trigger.</li>
+                <li>Keep at least 2–3 recent backups, not just the newest one — if a backup turns out to be corrupted or taken mid-problem, you still have an earlier good copy.</li>
+            </ol>
+
+            <h3 class="section-label" style="margin-top:18px;">How to restore</h3>
+            <ol style="font-size:14px; line-height:1.8; padding-left:20px;">
+                <li>Unzip the backup — you'll get <code>matrimonial.db</code> plus folders like <code>profile_originals/</code>, <code>payment_proofs/</code>, <code>banners/</code>, etc.</li>
+                <li>Stop the running app (or put it in maintenance) before restoring, so nothing writes to the database mid-restore.</li>
+                <li>Replace the server's <code>matrimonial.db</code> with the one from the backup, and put each folder back under the server's data directory in the same structure it came from.</li>
+                <li>Restart the app and check <code>/healthz</code>, then spot-check a few profiles and the admin dashboard before trusting it's fully back.</li>
+            </ol>
+
+            <h3 class="section-label" style="margin-top:18px;">Test your restore process at least once</h3>
+            <p style="font-size:14px; line-height:1.7;">
+                A backup you've never restored from is a guess, not a plan. Periodically — not necessarily
+                every week, but at least once when you set this up, and again after any major change to
+                this app — actually try restoring a backup into a separate test copy of the app (not the
+                live one) and confirm the data comes back correctly. If you don't have a safe place to test
+                this yourself, this is worth asking a developer to walk through with you once.
+            </p>
+
+            <h3 class="section-label" style="margin-top:18px;">Why this matters more than it might seem</h3>
+            <p style="font-size:14px; line-height:1.7;">
+                Whether this hosting setup keeps your database and uploaded files permanently, or wipes them
+                on every redeploy, has never been confirmed. Until that's checked and confirmed safe, treat
+                every deploy/restart as a risk and download a fresh backup <strong>before</strong> you deploy
+                any change, not just on a routine schedule.
+            </p>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

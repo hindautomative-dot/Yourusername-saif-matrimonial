@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Application Submitted — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card center">
+        <div style="font-size:40px; margin-bottom:10px;">🤲</div>
+        <h2 class="serif" style="color:var(--emerald-dark); margin-top:0;">Application Submitted</h2>
+        <p class="muted" style="font-size:14.5px;">
+            JazakAllah khair for reaching out. Our team will review the details you've shared and get
+            in touch with the contact number you provided.
+        </p>
+
+        <a class="btn btn-primary btn-block" href="{{ url_for('index') }}" style="margin-top:16px;">Back to Home</a>
+        <a class="btn btn-outline btn-block" href="{{ url_for('help_shadi') }}" style="margin-top:10px;">Back to {{ help_shadi_name }}</a>
+    </div>
+</section>
+
+{% endblock %}

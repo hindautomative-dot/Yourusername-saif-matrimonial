@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ help_shadi_name }} Requests{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">{{ help_shadi_name }} — Assistance Requests</h1>
+    <p class="section-sub">Community-assistance applications. Never shown publicly — review and update status here.</p>
+
+    <div class="tabs">
+        <a href="{{ url_for('admin_help_shadi', status='pending') }}" class="{{ 'active' if status_filter=='pending' }}">Pending</a>
+        <a href="{{ url_for('admin_help_shadi', status='under_review') }}" class="{{ 'active' if status_filter=='under_review' }}">Under Review</a>
+        <a href="{{ url_for('admin_help_shadi', status='approved') }}" class="{{ 'active' if status_filter=='approved' }}">Approved</a>
+        <a href="{{ url_for('admin_help_shadi', status='completed') }}" class="{{ 'active' if status_filter=='completed' }}">Completed</a>
+        <a href="{{ url_for('admin_help_shadi', status='rejected') }}" class="{{ 'active' if status_filter=='rejected' }}">Rejected</a>
+        <a href="{{ url_for('admin_help_shadi', status='all') }}" class="{{ 'active' if status_filter=='all' }}">All</a>
+    </div>
+
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Guardian</th><th>Candidate</th><th>Contact</th><th>Category</th><th>Details</th><th>Document</th><th>When</th><th>Status</th><th>Notes</th><th>Actions</th></tr>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.guardian_name }}</td>
+                <td>{{ r.candidate_name }}</td>
+                <td>{{ r.contact }}<br><span class="muted" style="font-size:12px;">{{ r.address }}</span></td>
+                <td>{{ r.assistance_category }}</td>
+                <td style="max-width:220px; white-space:pre-wrap;">{{ r.details or '—' }}</td>
+                <td>
+                    {% if r.document_filename %}
+                    <a class="btn btn-sm btn-outline" href="{{ url_for('admin_help_shadi_document', req_id=r.id) }}" target="_blank" rel="noopener">View Document</a>
+                    {% else %}—{% endif %}
+                </td>
+                <td>{{ r.created_at[:16].replace('T',' ') }}</td>
+                <td>
+                    {% if r.status == 'pending' %}<span class="badge badge-pending">Pending</span>
+                    {% elif r.status == 'under_review' %}<span class="badge badge-pending">Under Review</span>
+                    {% elif r.status == 'approved' %}<span class="badge badge-unlocked">Approved</span>
+                    {% elif r.status == 'completed' %}<span class="badge badge-unlocked">Completed</span>
+                    {% else %}<span class="badge badge-rejected">Rejected</span>{% endif %}
+                </td>
+                <td style="max-width:180px; white-space:pre-wrap; font-size:12.5px;">{{ r.admin_notes or '—' }}</td>
+                <td style="min-width:220px;">
+                    <form method="POST" action="{{ url_for('admin_decide_help_shadi', req_id=r.id, action=r.status, status=status_filter) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <textarea name="admin_notes" rows="2" placeholder="Internal notes (optional)" style="width:100%; font-size:12.5px; margin-bottom:6px;">{{ r.admin_notes or '' }}</textarea>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            {% for s in statuses %}
+                                {% if s != r.status %}
+                                <button class="btn btn-sm {{ 'btn-danger' if s == 'rejected' else 'btn-outline' if s != 'approved' else 'btn-primary' }}"
+                                        type="submit"
+                                        formaction="{{ url_for('admin_decide_help_shadi', req_id=r.id, action=s, status=status_filter) }}">
+                                    {{ s.replace('_', ' ')|title }}
+                                </button>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">🤲</div>
+        <p>No {{ help_shadi_name }} requests here.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

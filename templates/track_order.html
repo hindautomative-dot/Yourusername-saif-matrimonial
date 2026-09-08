@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Track Your Order — {{ business_name }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container-narrow">
+    <div class="card center" style="max-width:460px; margin:0 auto;">
+        <h2 class="serif" style="color:var(--emerald-dark); margin:0 0 6px;">Track Your Order</h2>
+        <p class="muted" style="font-size:14px; margin-bottom:20px;">
+            Enter the Order ID you were given after checkout (for example <b>ORD4F2A9C1B</b>)
+            to see its current status.
+        </p>
+
+        <form method="post" style="text-align:left;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="order_code" style="font-size:13px; font-weight:600; color:var(--muted);">Order ID</label>
+            <input class="input" type="text" id="order_code" name="order_code" placeholder="ORD..." required
+                   autocapitalize="characters" style="text-transform:uppercase; margin:8px 0 16px;">
+            <button type="submit" class="btn btn-primary" style="width:100%;">Track Order</button>
+        </form>
+
+        <p class="muted" style="font-size:12.5px; margin-top:18px;">
+            Can't find your Order ID? It was shown on the confirmation page right after checkout
+            and is also printed on your invoice. Contact us on WhatsApp if you need help.
+        </p>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,27 @@
+{# Reusable payment-waiting-lounge stepper. Include with:
+   {% include "_waiting_lounge.html" with context %}
+   after setting `track_code` in the parent template's context. #}
+<div id="waitingLounge" data-track-code="{{ track_code }}">
+    <div class="wl-stepper">
+        <div class="wl-step wl-step-done" id="wlStepSubmitted">
+            <div class="wl-step-circle">✓</div>
+            <div class="wl-step-label">Details<br>Submitted</div>
+        </div>
+        <div class="wl-step wl-step-active" id="wlStepReview">
+            <div class="wl-step-circle">⏳</div>
+            <div class="wl-step-label">Verification<br>in Progress</div>
+        </div>
+        <div class="wl-step wl-step-pending" id="wlStepDone">
+            <div class="wl-step-circle">🔓</div>
+            <div class="wl-step-label">Access<br>Unlocked</div>
+        </div>
+    </div>
+    <p id="wlStatusMessage" class="center">We are reviewing your transaction. Please keep this page open.</p>
+    <div id="wlSuccessBox" class="wl-success-box center">
+        Alhamdulillah! Your payment has been confirmed. Please continue below to access your unlock.
+    </div>
+    <div id="wlRejectedBox" class="wl-rejected-box center">
+        We couldn't verify this payment. Please contact us on WhatsApp with your reference code above.
+    </div>
+</div>
+<script src="{{ url_for('static', filename='js/waiting-lounge.js') }}"></script>

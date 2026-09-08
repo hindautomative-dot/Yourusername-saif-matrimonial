@@ -17,6 +17,9 @@
             This is your reference code — worth saving if you contact us on WhatsApp about this registration.
         </p>
 
+        {% set track_code = request_code %}
+        {% include "_waiting_lounge.html" with context %}
+
         <a class="btn btn-primary btn-block" href="{{ url_for('index') }}" style="margin-top:16px;">Back to Home</a>
         <a class="btn btn-outline btn-block" href="{{ url_for('index') }}#profiles" style="margin-top:10px;">Browse Profiles</a>
     </div>

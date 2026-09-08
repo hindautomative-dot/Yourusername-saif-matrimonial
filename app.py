@@ -6,6 +6,7 @@ import secrets
 import sqlite3
 import time
 import hashlib
+import zipfile
 from datetime import datetime, timedelta, date
 from functools import wraps
 
@@ -40,12 +41,16 @@ DB_PATH = os.path.join(DATA_DIR, "matrimonial.db")
 PRIVATE_ORIGINALS_DIR = os.path.join(DATA_DIR, "storage", "private", "profile_originals")
 PRIVATE_PROOFS_DIR = os.path.join(DATA_DIR, "storage", "private", "payment_proofs")
 PRIVATE_WATERMARK_CACHE_DIR = os.path.join(DATA_DIR, "storage", "private", "watermark_cache")
+# Help Shadi supporting documents (ration card photo, medical bill photo, etc.)
+# — same privacy guarantee as payment proofs: never under static/, only ever
+# served through an @admin_required route.
+PRIVATE_HELP_SHADI_DOCS_DIR = os.path.join(DATA_DIR, "storage", "private", "help_shadi_docs")
 PREVIEW_DIR = os.path.join(BASE_DIR, "static", "previews")
 BRANDING_DIR = os.path.join(BASE_DIR, "static", "branding")
 BANNERS_DIR = os.path.join(BASE_DIR, "static", "banners")
 
 for d in (PRIVATE_ORIGINALS_DIR, PRIVATE_PROOFS_DIR, PRIVATE_WATERMARK_CACHE_DIR,
-          PREVIEW_DIR, BRANDING_DIR, BANNERS_DIR):
+          PRIVATE_HELP_SHADI_DOCS_DIR, PREVIEW_DIR, BRANDING_DIR, BANNERS_DIR):
     os.makedirs(d, exist_ok=True)
 
 ALLOWED_IMAGE_EXT = {"png", "jpg", "jpeg", "webp"}
@@ -207,14 +212,60 @@ def notify_admin(subject, message):
             app.logger.error(f"[ADMIN-NOTIFY] WhatsApp failed: {e}")
 
 
+def create_admin_event(event_type, title, body="", related_code="", action_url=""):
+    """The real internal 'something happened' feed, distinct from
+    notify_admin() (external SMS/email/WhatsApp) above and distinct from
+    the `notifications` table (admin-authored broadcast shown TO
+    visitors — see /admin/notifications). This one is system-generated,
+    admin-only, and drives the /admin/events page + its unread badge."""
+    db = get_db()
+    db.execute(
+        "INSERT INTO admin_events (event_type, title, body, related_code, action_url, is_read, created_at) "
+        "VALUES (?, ?, ?, ?, ?, 0, ?)",
+        (event_type, title, body, related_code, action_url, datetime.now().isoformat()),
+    )
+    db_commit_retry(db)
+
+
 # ======================================================================
 # DATABASE
 # ======================================================================
+def db_commit_retry(db, max_retries=3, base_delay=0.15):
+    """Commit with a short retry-with-backoff, specifically for the rare
+    'database is locked' case that WAL mode + busy_timeout=5000 (set on
+    every connection below) don't already absorb. busy_timeout is the
+    primary defense — SQLite itself waits and retries for up to 5s before
+    ever raising this error — so this is a thin backstop for the unlucky
+    edge case where two writers still collide right as that window closes,
+    not the main mechanism. Any other OperationalError is re-raised
+    immediately; only 'locked' is worth retrying."""
+    for attempt in range(max_retries):
+        try:
+            db.commit()
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() or attempt == max_retries - 1:
+                raise
+            time.sleep(base_delay * (2 ** attempt))
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
+        g.db = sqlite3.connect(DB_PATH, timeout=10)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+        # WAL lets reads and writes happen concurrently instead of
+        # blocking each other (default SQLite journal mode serializes
+        # everything); busy_timeout makes SQLite itself wait and retry
+        # for up to 5s on a locked database instead of raising
+        # "database is locked" immediately; synchronous=NORMAL is the
+        # standard safe pairing with WAL (still durable, less fsync
+        # overhead than FULL). Safe to run on every connection — it's a
+        # per-connection pragma, and journal_mode=WAL is a one-time
+        # on-disk change that persists after the first call.
+        g.db.execute("PRAGMA journal_mode=WAL")
+        g.db.execute("PRAGMA busy_timeout=5000")
+        g.db.execute("PRAGMA synchronous=NORMAL")
     return g.db
 
 
@@ -446,6 +497,43 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_photo_requests_status ON photo_requests(status);
         CREATE INDEX IF NOT EXISTS idx_photo_requests_profile ON photo_requests(profile_id);
         CREATE INDEX IF NOT EXISTS idx_agents_phone ON agents(phone);
+
+        -- Help Shadi — community-assistance requests. Entirely separate from
+        -- the matrimonial profiles/payment flow: nobody applying here becomes
+        -- a browsable profile, and nothing here is ever shown publicly.
+        CREATE TABLE IF NOT EXISTS help_shadi_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guardian_name TEXT NOT NULL,
+            candidate_name TEXT NOT NULL,
+            contact TEXT NOT NULL,
+            address TEXT NOT NULL,
+            assistance_category TEXT NOT NULL,
+            details TEXT,
+            document_filename TEXT,
+            status TEXT DEFAULT 'pending',
+            admin_notes TEXT,
+            created_at TEXT NOT NULL,
+            decided_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_help_shadi_status ON help_shadi_requests(status);
+
+        -- Admin event feed — a real internal "something happened" log,
+        -- distinct from the `notifications` table above (which is an
+        -- admin-authored broadcast shown TO visitors). This one is
+        -- system-generated, admin-only, and drives the /admin/events page.
+        CREATE TABLE IF NOT EXISTS admin_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            related_code TEXT,
+            action_url TEXT,
+            is_read INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_admin_events_unread ON admin_events(is_read);
         CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON agent_activity_log(agent_id);
         CREATE INDEX IF NOT EXISTS idx_self_reg_status ON self_registrations(status);
         CREATE INDEX IF NOT EXISTS idx_self_reg_phone ON self_registrations(phone);
@@ -551,7 +639,7 @@ def init_db():
     # them to "admin" (the original, only way profiles were created) — this
     # is documented as a known limitation for historical data.
     db.execute("UPDATE profiles SET registration_source = 'admin' WHERE registration_source IS NULL")
-    db.commit()
+    db_commit_retry(db)
 
     defaults = {
         "brand_name": os.environ.get("BUSINESS_NAME", "Saif Matrimonial Services"),
@@ -590,11 +678,19 @@ def init_db():
         "hero_bg_image": "",
         "section_bg_image": "",
         "footer_bg_image": "",
+        # Help Shadi's public-facing name is admin-editable — the route
+        # paths (/help-shadi, /admin/help-shadi) never change, only what's
+        # displayed in nav/footer/headings, so nothing breaks if it's renamed.
+        "help_shadi_display_name": "Help Shadi",
+        "instagram_url": "",
+        "facebook_url": "",
+        "youtube_url": "",
+        "telegram_url": "",
     }
     for k, v in defaults.items():
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 
-    db.commit()
+    db_commit_retry(db)
     db.close()
 
 
@@ -670,6 +766,11 @@ def inject_globals():
         hero_bg_image=s.get("hero_bg_image", ""),
         section_bg_image=s.get("section_bg_image", ""),
         footer_bg_image=s.get("footer_bg_image", ""),
+        help_shadi_name=s.get("help_shadi_display_name", "Help Shadi"),
+        instagram_url=s.get("instagram_url", ""),
+        facebook_url=s.get("facebook_url", ""),
+        youtube_url=s.get("youtube_url", ""),
+        telegram_url=s.get("telegram_url", ""),
         top_banners=active_banners("top"),
         current_year=datetime.now().year,
     )
@@ -887,7 +988,7 @@ def credit_coins(phone, amount, reason, reference=None):
     )
     db.execute("INSERT INTO coin_ledger (phone, delta, reason, reference, created_at) VALUES (?, ?, ?, ?, ?)",
                (phone, amount, reason, reference, now))
-    db.commit()
+    db_commit_retry(db)
 
 
 def debit_coins(phone, amount, reason, reference=None):
@@ -903,7 +1004,7 @@ def debit_coins(phone, amount, reason, reference=None):
     db.execute("UPDATE coin_wallets SET balance = balance - ?, updated_at = ? WHERE phone = ?", (amount, now, phone))
     db.execute("INSERT INTO coin_ledger (phone, delta, reason, reference, created_at) VALUES (?, ?, ?, ?, ?)",
                (phone, -amount, reason, reference, now))
-    db.commit()
+    db_commit_retry(db)
     return True
 
 
@@ -997,6 +1098,14 @@ class RateLimiter:
 login_limiter = RateLimiter(max_attempts=6, window_seconds=600, lockout_seconds=900)
 otp_request_limiter = RateLimiter(max_attempts=5, window_seconds=600, lockout_seconds=600)
 otp_verify_limiter = RateLimiter(max_attempts=6, window_seconds=600, lockout_seconds=600)
+# Registration and unlock/payment submissions weren't behind any limiter —
+# both accept a phone number + free-text fields with no OTP gate, so
+# without this a script could spam either form indefinitely.
+registration_limiter = RateLimiter(max_attempts=5, window_seconds=600, lockout_seconds=900)
+unlock_submit_limiter = RateLimiter(max_attempts=10, window_seconds=600, lockout_seconds=600)
+# Help Shadi submissions — same shape of form as registration (name/contact/
+# free text + optional file), same abuse risk, same limiter pattern.
+help_shadi_limiter = RateLimiter(max_attempts=5, window_seconds=600, lockout_seconds=900)
 
 
 # ======================================================================
@@ -1059,6 +1168,19 @@ def save_payment_proof(file_storage):
     proof_name = secrets.token_hex(16) + ".jpg"
     img.save(os.path.join(PRIVATE_PROOFS_DIR, proof_name), "JPEG", quality=85)
     return proof_name
+
+
+def save_help_shadi_document(file_storage):
+    """Same validated-image-into-private-dir pattern as save_payment_proof —
+    kept as its own function (rather than reusing save_payment_proof
+    directly) so the storage location and any future validation rules for
+    Help Shadi documents can diverge without touching payment-proof code."""
+    img = _load_validated_image(file_storage)
+    if img is None:
+        return None
+    doc_name = secrets.token_hex(16) + ".jpg"
+    img.save(os.path.join(PRIVATE_HELP_SHADI_DOCS_DIR, doc_name), "JPEG", quality=85)
+    return doc_name
 
 
 def save_generic_image(file_storage, dest_dir, max_dim=1600):
@@ -1153,7 +1275,7 @@ def log_admin_action(action, detail=""):
         "INSERT INTO admin_activity_log (admin_username, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)",
         (session.get("admin_username", ADMIN_USERNAME), action, detail, _client_ip(), datetime.now().isoformat()),
     )
-    db.commit()
+    db_commit_retry(db)
 
 
 def verified_phone():
@@ -1502,6 +1624,12 @@ def unlock(profile_code):
         abort(404)
 
     if request.method == "POST":
+        ip = _client_ip()
+        if unlock_submit_limiter.is_locked(ip):
+            flash("Too many submissions from this device. Please try again in a few minutes.", "error")
+            return render_template("unlock.html", profile=profile)
+        unlock_submit_limiter.register_attempt(ip)
+
         user_name = request.form.get("user_name", "").strip()[:120]
         user_phone = request.form.get("user_phone", "").strip()
         message = request.form.get("message", "").strip()[:500]
@@ -1571,7 +1699,7 @@ def unlock(profile_code):
             (request_code, profile["id"], user_name, user_phone, proof_name, message,
              coins_used, discount_amount, datetime.now().isoformat()),
         )
-        db.commit()
+        db_commit_retry(db)
 
         notify_admin(
             "New payment request",
@@ -1579,6 +1707,13 @@ def unlock(profile_code):
             f"profile {profile['profile_code']} ({profile['name']}). Request code: {request_code}. "
             f"{'Coins used: ' + str(coins_used) + f' (₹{discount_amount} off). ' if coins_used else ''}"
             f"Review: {request.url_root.rstrip('/')}{url_for('admin_requests')}",
+        )
+        create_admin_event(
+            "payment",
+            f"New payment request — {request_code}",
+            f"{user_name or 'A customer'} ({user_phone}) for profile {profile['profile_code']} ({profile['name']}).",
+            request_code,
+            url_for("admin_requests"),
         )
 
         # NOTE: unlike v2, we deliberately do NOT auto-trust this session
@@ -1717,7 +1852,7 @@ def package_checkout():
                  coins_used if i == 0 else 0, discount_amount if i == 0 else 0.0,
                  datetime.now().isoformat(), package_code),
             )
-        db.commit()
+        db_commit_retry(db)
 
         session.pop("package_selection", None)
         profile_list = ", ".join(p["profile_code"] for p in profiles)
@@ -1727,6 +1862,13 @@ def package_checkout():
             f"{size}-profile package ({profile_list}). Package code: {package_code}. "
             f"{'Coins used: ' + str(coins_used) + f' (₹{discount_amount} off). ' if coins_used else ''}"
             f"Review: {request.url_root.rstrip('/')}{url_for('admin_requests')}",
+        )
+        create_admin_event(
+            "package",
+            f"New package request — {package_code}",
+            f"{user_name or 'A customer'} ({user_phone}) for {size} profiles ({profile_list}).",
+            package_code,
+            url_for("admin_requests"),
         )
 
         return render_template("package_submitted.html", profiles=profiles, package_code=package_code)
@@ -1745,6 +1887,12 @@ def package_checkout():
 @app.route("/register-yourself", methods=["GET", "POST"])
 def register_yourself():
     if request.method == "POST":
+        ip = _client_ip()
+        if registration_limiter.is_locked(ip):
+            flash("Too many submissions from this device. Please try again in a few minutes.", "error")
+            return render_template("register_yourself.html")
+        registration_limiter.register_attempt(ip)
+
         name = request.form.get("name", "").strip()[:120]
         phone = request.form.get("phone", "").strip()
         age = request.form.get("age", "").strip()
@@ -1817,17 +1965,119 @@ def register_yourself():
              hobbies, lifestyle_drinking, lifestyle_smoking, lifestyle_tobacco, lifestyle_namaz, lifestyle_roza,
              photo_original_name, photo_preview_name, proof_name, datetime.now().isoformat()),
         )
-        db.commit()
+        db_commit_retry(db)
 
         notify_admin(
             "New self-registration",
             f"{name} ({phone}) registered themselves for ₹{get_setting('registration_price', '11')}. "
             f"Request code: {request_code}. Review: {request.url_root.rstrip('/')}{url_for('admin_registrations')}",
         )
+        create_admin_event(
+            "registration",
+            f"New self-registration — {request_code}",
+            f"{name} ({phone}) registered for ₹{get_setting('registration_price', '11')}.",
+            request_code,
+            url_for("admin_registrations"),
+        )
 
         return render_template("registration_submitted.html", request_code=request_code)
 
     return render_template("register_yourself.html")
+
+
+# ======================================================================
+# HELP SHADI — community-assistance feature. Deliberately separate from
+# the matrimonial profiles/payment flow above: nobody who registers here
+# becomes a profile, and none of their details are ever shown publicly.
+# Reuses the site's existing qr_image/upi_id settings (via inject_globals)
+# rather than a second QR setting, and the same manual-review pattern
+# (pending -> admin decides) used everywhere else on the site.
+# ======================================================================
+HELP_SHADI_CATEGORIES = [
+    "Nikah essentials", "Basic household essentials", "Food",
+    "Venue support", "Other",
+]
+
+
+@app.route("/help-shadi")
+def help_shadi():
+    return render_template("help_shadi.html", categories=HELP_SHADI_CATEGORIES)
+
+
+@app.route("/help-shadi/register", methods=["GET", "POST"])
+def help_shadi_register():
+    if request.method == "POST":
+        ip = _client_ip()
+        if help_shadi_limiter.is_locked(ip):
+            flash("Too many submissions from this device. Please try again in a few minutes.", "error")
+            return render_template("help_shadi_register.html", categories=HELP_SHADI_CATEGORIES)
+        help_shadi_limiter.register_attempt(ip)
+
+        guardian_name = request.form.get("guardian_name", "").strip()[:120]
+        candidate_name = request.form.get("candidate_name", "").strip()[:120]
+        contact = request.form.get("contact", "").strip()[:40]
+        address = request.form.get("address", "").strip()[:400]
+        assistance_category = request.form.get("assistance_category", "").strip()
+        details = request.form.get("details", "").strip()[:1000]
+
+        errors = []
+        if not guardian_name:
+            errors.append("Please enter the guardian's name.")
+        if not candidate_name:
+            errors.append("Please enter the candidate's name.")
+        if not valid_indian_phone(contact):
+            errors.append("Please enter a valid 10-digit Indian mobile number.")
+        if not address:
+            errors.append("Please enter the address.")
+        if assistance_category not in HELP_SHADI_CATEGORIES:
+            errors.append("Please select the type of assistance required.")
+        if not details:
+            errors.append("Please describe the situation briefly.")
+
+        document_filename = None
+        doc_file = request.files.get("document")
+        if doc_file and doc_file.filename:
+            try:
+                document_filename = save_help_shadi_document(doc_file)
+            except ImageValidationError as e:
+                errors.append(str(e))
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("help_shadi_register.html", categories=HELP_SHADI_CATEGORIES)
+
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO help_shadi_requests
+            (guardian_name, candidate_name, contact, address, assistance_category,
+             details, document_filename, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (guardian_name, candidate_name, contact, address, assistance_category,
+             details, document_filename, datetime.now().isoformat()),
+        )
+        db_commit_retry(db)
+
+        hs_name = get_setting("help_shadi_display_name", "Help Shadi")
+        notify_admin(
+            f"New {hs_name} request",
+            f"{guardian_name} submitted a {hs_name} request for {candidate_name} "
+            f"({assistance_category}). Contact: {contact}. "
+            f"Review: {request.url_root.rstrip('/')}{url_for('admin_help_shadi')}",
+        )
+        create_admin_event(
+            "help_shadi",
+            f"New {hs_name} request — {candidate_name}",
+            f"Guardian: {guardian_name}. Category: {assistance_category}. Contact: {contact}.",
+            "",
+            url_for("admin_help_shadi"),
+        )
+
+        return render_template("help_shadi_submitted.html")
+
+    return render_template("help_shadi_register.html", categories=HELP_SHADI_CATEGORIES)
 
 
 @app.route("/profile/<profile_code>/full")
@@ -1870,11 +2120,18 @@ def request_more_photos(profile_code):
         """,
         (profile["id"], phone, message, datetime.now().isoformat()),
     )
-    db.commit()
+    db_commit_retry(db)
     notify_admin(
         "More photos requested",
         f"{phone} requested more photos for profile {profile['profile_code']} ({profile['name']}). "
         f"Review: {request.url_root.rstrip('/')}{url_for('admin_photo_requests')}",
+    )
+    create_admin_event(
+        "photo_request",
+        f"More photos requested — {profile['profile_code']}",
+        f"{phone} for profile {profile['profile_code']} ({profile['name']}).",
+        profile["profile_code"],
+        url_for("admin_photo_requests"),
     )
     flash("Your request for more photos has been sent to our team.", "success")
     return redirect(url_for("profile_full", profile_code=profile_code))
@@ -1922,7 +2179,7 @@ def verify_access():
              (datetime.now() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat(),
              datetime.now().isoformat()),
         )
-        db.commit()
+        db_commit_retry(db)
         send_otp_sms(phone, code)
 
         session["otp_phone"] = phone
@@ -1964,7 +2221,7 @@ def verify_access_confirm():
             return render_template("verify_access_confirm.html", phone=phone)
 
         db.execute("UPDATE otp_codes SET consumed = 1 WHERE id = ?", (row["id"],))
-        db.commit()
+        db_commit_retry(db)
         otp_verify_limiter.clear(phone)
         session.pop("otp_phone", None)
         session.pop("otp_last_sent_at", None)
@@ -2001,6 +2258,60 @@ def exit_verification():
 
 
 # ======================================================================
+# PAYMENT WAITING LOUNGE — a lightweight, no-login status-check API so a
+# customer who just submitted a payment/registration doesn't have to
+# manually revisit "My Requests" (which itself requires OTP verification)
+# to see whether they're still pending. Deliberately returns the bare
+# minimum: just enough to drive a stepper UI, nothing that could leak
+# another customer's private details. request_code/package_code are
+# 8-character codes drawn from a 32-symbol alphabet (32^8 ≈ 1.1 trillion
+# combinations) — the same code the customer is already shown and told
+# to save, so this doesn't create any new guessable-ID exposure beyond
+# what already existed (the code was always their reference number for
+# WhatsApp support).
+# ======================================================================
+def _track_code_valid(code):
+    alphabet = set("ABCDEFGHJKMNPQRSTUVWXYZ23456789")
+    return bool(code) and 4 <= len(code) <= 12 and set(code.upper()) <= alphabet
+
+
+@app.route("/track/<code>")
+def track_status(code):
+    if not _track_code_valid(code):
+        abort(404)
+    code = code.upper()
+    db = get_db()
+
+    # A package_code covers several unlock_requests rows at once.
+    pkg_rows = db.execute(
+        "SELECT status FROM unlock_requests WHERE package_code = ?", (code,)
+    ).fetchall()
+    if pkg_rows:
+        statuses = {r["status"] for r in pkg_rows}
+        if statuses == {"approved"}:
+            overall = "approved"
+        elif "rejected" in statuses:
+            overall = "rejected"
+        else:
+            overall = "pending"
+        return jsonify({"found": True, "kind": "package", "status": overall})
+
+    row = db.execute(
+        "SELECT status FROM unlock_requests WHERE request_code = ?", (code,)
+    ).fetchone()
+    if row:
+        return jsonify({"found": True, "kind": "unlock", "status": row["status"]})
+
+    row = db.execute(
+        "SELECT status FROM self_registrations WHERE request_code = ?", (code,)
+    ).fetchone()
+    if row:
+        return jsonify({"found": True, "kind": "registration", "status": row["status"]})
+
+    return jsonify({"found": False})
+
+
+# ======================================================================
 # AGENT PORTAL
 #
 # Agents are NEVER self-registered from the public site — only an admin
@@ -2029,7 +2340,7 @@ def log_agent_action(agent_id, action, detail=""):
         "INSERT INTO agent_activity_log (agent_id, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)",
         (agent_id, action, detail, _client_ip(), datetime.now().isoformat()),
     )
-    db.commit()
+    db_commit_retry(db)
 
 
 agent_otp_limiter = RateLimiter(max_attempts=5, window_seconds=600, lockout_seconds=600)
@@ -2065,7 +2376,7 @@ def agent_login():
              (datetime.now() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat(),
              datetime.now().isoformat()),
         )
-        db.commit()
+        db_commit_retry(db)
         send_otp_sms(phone, code)
 
         session["agent_otp_phone"] = phone
@@ -2113,7 +2424,7 @@ def agent_verify():
 
         db.execute("UPDATE otp_codes SET consumed = 1 WHERE id = ?", (otp_row["id"],))
         db.execute("UPDATE agents SET last_login_at = ? WHERE id = ?", (datetime.now().isoformat(), agent["id"]))
-        db.commit()
+        db_commit_retry(db)
         agent_code_limiter.clear(phone)
         session.pop("agent_otp_phone", None)
         session.permanent = True
@@ -2275,7 +2586,7 @@ def admin_add_agent():
             "INSERT INTO agents (name, phone, notes, access_code_hash, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)",
             (name, phone, notes, generate_password_hash(access_code), datetime.now().isoformat()),
         )
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("add_agent", phone)
         flash("Agent created.", "success")
         return render_template("admin_agent_created.html", name=name, phone=phone, access_code=access_code)
@@ -2288,7 +2599,7 @@ def admin_add_agent():
 def admin_toggle_agent(agent_id):
     db = get_db()
     db.execute("UPDATE agents SET is_active = 1 - is_active WHERE id = ?", (agent_id,))
-    db.commit()
+    db_commit_retry(db)
     log_admin_action("toggle_agent", str(agent_id))
     flash("Agent status updated.", "success")
     return redirect(url_for("admin_agents"))
@@ -2303,7 +2614,7 @@ def admin_reset_agent_code(agent_id):
         abort(404)
     access_code = "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
     db.execute("UPDATE agents SET access_code_hash = ? WHERE id = ?", (generate_password_hash(access_code), agent_id))
-    db.commit()
+    db_commit_retry(db)
     log_admin_action("reset_agent_code", agent["phone"])
     flash("Access code reset.", "success")
     return render_template("admin_agent_created.html", name=agent["name"], phone=agent["phone"], access_code=access_code)
@@ -2325,6 +2636,19 @@ def admin_agent_activity(agent_id):
 # ======================================================================
 # SEO — robots.txt / sitemap.xml
 # ======================================================================
+@app.route("/healthz")
+def healthz():
+    """Lightweight uptime-monitor target — verifies the app process is up
+    AND the database is actually reachable (a hung/locked DB is the most
+    common real failure mode, not just 'process is running')."""
+    try:
+        get_db().execute("SELECT 1").fetchone()
+        return {"status": "ok"}, 200
+    except Exception as e:
+        app.logger.error(f"[HEALTHZ] database check failed: {e}")
+        return {"status": "error", "detail": "database unreachable"}, 503
+
+
 @app.route("/robots.txt")
 def robots_txt():
     lines = [
@@ -2403,7 +2727,92 @@ def admin_api_pending_count():
     db = get_db()
     count = db.execute("SELECT COUNT(*) c FROM unlock_requests WHERE status='pending'").fetchone()["c"]
     reg_count = db.execute("SELECT COUNT(*) c FROM self_registrations WHERE status='pending'").fetchone()["c"]
-    return {"pending": count + reg_count, "payment_pending": count, "registration_pending": reg_count}
+    help_shadi_count = db.execute("SELECT COUNT(*) c FROM help_shadi_requests WHERE status='pending'").fetchone()["c"]
+    unread_events = db.execute("SELECT COUNT(*) c FROM admin_events WHERE is_read = 0").fetchone()["c"]
+    return {
+        "pending": count + reg_count + help_shadi_count,
+        "payment_pending": count,
+        "registration_pending": reg_count,
+        "help_shadi_pending": help_shadi_count,
+        "unread_events": unread_events,
+    }
+
+
+@app.route("/admin/events")
+@admin_required
+def admin_events():
+    db = get_db()
+    rows = db.execute("SELECT * FROM admin_events ORDER BY id DESC LIMIT 200").fetchall()
+    # Viewing the feed is what "seeing" a notification means here — mark
+    # everything currently listed as read, same as opening a notification
+    # inbox. The badge count reflects what's unread *before* this view.
+    db.execute("UPDATE admin_events SET is_read = 1 WHERE is_read = 0")
+    db_commit_retry(db)
+    return render_template("admin_events.html", rows=rows)
+
+
+# ======================================================================
+# ADMIN — BACKUP
+# On-demand, phone-friendly backup: builds the database (via SQLite's
+# online .backup() API, which is safe to run while the app is live and
+# writing under WAL mode — no downtime, no locking the site) plus every
+# private/uploaded file into a single zip, streamed straight to the
+# admin's device. This exists because Render's disk persistence for this
+# app has never been confirmed (flagged since Part 1) — until that's
+# verified, the safest backup is one the admin actually holds a copy of,
+# not one that only lives on the same disk it's protecting against.
+# ======================================================================
+BACKUP_INCLUDE_DIRS = [
+    ("profile_originals", PRIVATE_ORIGINALS_DIR),
+    ("payment_proofs", PRIVATE_PROOFS_DIR),
+    ("help_shadi_docs", PRIVATE_HELP_SHADI_DOCS_DIR),
+    ("previews", PREVIEW_DIR),
+    ("branding", BRANDING_DIR),
+    ("banners", BANNERS_DIR),
+]
+
+
+@app.route("/admin/backup")
+@admin_required
+def admin_backup():
+    db_size_mb = round(os.path.getsize(DB_PATH) / (1024 * 1024), 2) if os.path.exists(DB_PATH) else 0
+    return render_template("admin_backup.html", db_size_mb=db_size_mb, data_dir=DATA_DIR)
+
+
+@app.route("/admin/backup/download")
+@admin_required
+def admin_backup_download():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Online backup — sqlite3's .backup() takes a consistent snapshot
+        # even while other connections are actively writing (WAL-safe),
+        # unlike a plain file copy which could grab a half-written page.
+        tmp_db_path = os.path.join(DATA_DIR, f"_backup_tmp_{secrets.token_hex(6)}.db")
+        try:
+            src = sqlite3.connect(DB_PATH)
+            dst = sqlite3.connect(tmp_db_path)
+            with dst:
+                src.backup(dst)
+            src.close()
+            dst.close()
+            zf.write(tmp_db_path, "matrimonial.db")
+        finally:
+            if os.path.exists(tmp_db_path):
+                os.remove(tmp_db_path)
+
+        for arc_prefix, dir_path in BACKUP_INCLUDE_DIRS:
+            if not os.path.isdir(dir_path):
+                continue
+            for fname in os.listdir(dir_path):
+                fpath = os.path.join(dir_path, fname)
+                if os.path.isfile(fpath):
+                    zf.write(fpath, os.path.join(arc_prefix, fname))
+
+    buf.seek(0)
+    log_admin_action("backup_download", "")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                      download_name=f"saif_matrimonial_backup_{stamp}.zip")
 
 
 @app.route("/admin")
@@ -2422,10 +2831,21 @@ def admin_dashboard():
         "reg_pending": db.execute("SELECT COUNT(*) c FROM self_registrations WHERE status='pending'").fetchone()["c"],
         "reg_total": db.execute("SELECT COUNT(*) c FROM self_registrations").fetchone()["c"],
         "photo_req_pending": db.execute("SELECT COUNT(*) c FROM photo_requests WHERE status='pending'").fetchone()["c"],
+        "help_shadi_pending": db.execute("SELECT COUNT(*) c FROM help_shadi_requests WHERE status='pending'").fetchone()["c"],
+        "help_shadi_total": db.execute("SELECT COUNT(*) c FROM help_shadi_requests").fetchone()["c"],
         "self_registered": db.execute("SELECT COUNT(*) c FROM profiles WHERE registration_source='self'").fetchone()["c"],
         "admin_registered": db.execute("SELECT COUNT(*) c FROM profiles WHERE registration_source='admin'").fetchone()["c"],
         "verified_profiles": db.execute("SELECT COUNT(*) c FROM profiles WHERE admin_verified=1").fetchone()["c"],
+        "unread_events": db.execute("SELECT COUNT(*) c FROM admin_events WHERE is_read=0").fetchone()["c"],
+        "shop_orders_pending": db.execute(
+            "SELECT COUNT(*) c FROM shop_orders WHERE order_status='pending'"
+        ).fetchone()["c"],
+        "shop_orders_total": db.execute("SELECT COUNT(*) c FROM shop_orders").fetchone()["c"],
     }
+    stats["needs_attention"] = (
+        stats["pending"] + stats["reg_pending"] + stats["photo_req_pending"]
+        + stats["help_shadi_pending"] + stats["shop_orders_pending"]
+    )
     recent_pending = db.execute(
         """
         SELECT ur.*, p.profile_code, p.name FROM unlock_requests ur
@@ -2625,6 +3045,111 @@ def generate_profiles_excel_bytes(profiles):
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def generate_shop_invoice_pdf_bytes(order, items, business_name, brand_phone="", brand_address=""):
+    """Builds a simple, clean invoice/receipt PDF for one shop order.
+    Works for any order_status — clearly labels itself as a provisional
+    receipt while payment is still pending, and as a paid invoice once
+    payment_status is 'paid', so it never overstates what has actually
+    been confirmed."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        title=f"Invoice {order['order_code']}",
+    )
+    styles = _pdf_styles()
+    story = []
+
+    is_paid = (order["payment_status"] == "paid")
+    doc_label = "INVOICE" if is_paid else "ORDER RECEIPT (Payment Pending Verification)"
+
+    story.append(Paragraph(business_name.upper(), ParagraphStyle(
+        "Brand2", parent=styles["Normal"], fontSize=10, textColor=rl_colors.HexColor("#c9a86a"),
+        alignment=TA_CENTER, spaceAfter=4,
+    )))
+    story.append(Paragraph(doc_label, ParagraphStyle(
+        "InvoiceHead", parent=styles["Title"], fontSize=17, textColor=rl_colors.HexColor("#073e2f"),
+        alignment=TA_CENTER, spaceAfter=2,
+    )))
+    story.append(Paragraph(f"Order Code: {order['order_code']}", styles["BiodataCode"]))
+    story.append(HRFlowable(width="100%", color=rl_colors.HexColor("#e8d9b8"), thickness=1))
+
+    meta_rows = [
+        ("Order Date", str(order["created_at"])[:16].replace("T", " ")),
+        ("Customer Name", order["customer_name"]),
+        ("Phone", order["customer_phone"]),
+        ("Delivery Address", order["customer_address"] or "—"),
+        ("Order Status", (order["order_status"] or "").capitalize()),
+        ("Payment Status", (order["payment_status"] or "").capitalize()),
+    ]
+    t = _pdf_field_table(meta_rows, styles)
+    if t:
+        story.append(Spacer(1, 8))
+        story.append(t)
+
+    story.append(Paragraph("Items", styles["SectionHead"]))
+    item_rows = [["Item", "Qty", "Unit Price", "Total"]]
+    for it in items:
+        label = it["product_name"]
+        if it["variant_label"]:
+            label += f" ({it['variant_label']})"
+        item_rows.append([
+            label, str(it["qty"]), f"Rs. {it['unit_price']:.0f}",
+            f"Rs. {(it['unit_price'] * it['qty']):.0f}",
+        ])
+    items_table = Table(item_rows, colWidths=[80 * mm, 20 * mm, 30 * mm, 30 * mm])
+    items_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#0b5a44")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, rl_colors.HexColor("#e6e1d6")),
+    ]))
+    story.append(items_table)
+
+    if order["discount_amount"]:
+        story.append(Paragraph(
+            f"Coin discount applied: Rs. {order['discount_amount']:.0f} "
+            f"({order['coins_used']} coins)", styles["BodyText2"]
+        ))
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(f"<b>Total Paid: Rs. {order['total_amount']:.0f}</b>", ParagraphStyle(
+        "TotalLine", parent=styles["BodyText2"], fontSize=13, alignment=TA_CENTER,
+        textColor=rl_colors.HexColor("#073e2f"), spaceBefore=6,
+    )))
+
+    if not is_paid:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph(
+            "This is a provisional receipt. Your payment is still being verified by our team; "
+            "it will be confirmed shortly. This is not a confirmation of payment.",
+            ParagraphStyle("Notice", parent=styles["BodyText2"], fontSize=9, textColor=rl_colors.HexColor("#8a6d1f")),
+        ))
+
+    contact_line = f"Questions about this order? Contact {business_name}"
+    if brand_phone:
+        contact_line += f" — {brand_phone}"
+    story.append(Spacer(1, 14))
+    story.append(Paragraph(contact_line, styles["BodyText2"]))
+    if brand_address:
+        story.append(Paragraph(brand_address, styles["BodyText2"]))
+
+    def _footer(canvas, doc_):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(rl_colors.HexColor("#6b7268"))
+        canvas.drawString(18 * mm, 10 * mm, f"Generated {datetime.now().strftime('%d %b %Y')} · {business_name}")
+        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Page {doc_.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     buf.seek(0)
     return buf
 
@@ -2904,7 +3429,7 @@ def admin_add_profile():
                 original_name, preview_name, datetime.now().isoformat(),
             ),
         )
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("add_profile", profile_code)
         flash(f"Profile {profile_code} added.", "success")
         return redirect(url_for("admin_profiles"))
@@ -2971,7 +3496,7 @@ def admin_edit_profile(profile_id):
                 f["lifestyle_namaz"], f["lifestyle_roza"], profile_id,
             ),
         )
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("edit_profile", profile["profile_code"])
         flash("Profile updated.", "success")
         return redirect(url_for("admin_profiles"))
@@ -2984,7 +3509,7 @@ def admin_edit_profile(profile_id):
 def admin_toggle_profile(profile_id):
     db = get_db()
     db.execute("UPDATE profiles SET is_active = 1 - is_active WHERE id = ?", (profile_id,))
-    db.commit()
+    db_commit_retry(db)
     log_admin_action("toggle_profile", str(profile_id))
     return redirect(url_for("admin_profiles"))
 
@@ -2998,7 +3523,7 @@ def admin_delete_profile(profile_id):
         delete_file_quietly(PRIVATE_ORIGINALS_DIR, profile["photo_original_name"])
         delete_file_quietly(PREVIEW_DIR, profile["photo_preview_name"])
         db.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("delete_profile", profile["profile_code"])
         flash("Profile deleted.", "success")
     return redirect(url_for("admin_profiles"))
@@ -3073,7 +3598,7 @@ def admin_decide_request(request_id, action):
         "UPDATE unlock_requests SET status = ?, decided_at = ? WHERE id = ?",
         (new_status, datetime.now().isoformat(), request_id),
     )
-    db.commit()
+    db_commit_retry(db)
     if action == "reject" and row and row["coins_used"]:
         refund_coins(row["user_phone"], row["coins_used"], "unlock_reject_refund", str(request_id))
     log_admin_action(f"request_{action}", str(request_id))
@@ -3093,7 +3618,7 @@ def admin_decide_package(package_code, action):
         "UPDATE unlock_requests SET status = ?, decided_at = ? WHERE package_code = ?",
         (new_status, datetime.now().isoformat(), package_code),
     )
-    db.commit()
+    db_commit_retry(db)
     if action == "reject":
         for row in rows:
             if row["coins_used"]:
@@ -3147,7 +3672,7 @@ def admin_decide_registration(reg_id, action):
             "UPDATE self_registrations SET status = 'rejected', decided_at = ? WHERE id = ?",
             (datetime.now().isoformat(), reg_id),
         )
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("registration_reject", str(reg_id))
         flash("Registration rejected.", "success")
         return redirect(url_for("admin_registrations"))
@@ -3176,7 +3701,7 @@ def admin_decide_registration(reg_id, action):
         "UPDATE self_registrations SET status = 'approved', decided_at = ?, profile_id = ? WHERE id = ?",
         (datetime.now().isoformat(), new_profile["id"], reg_id),
     )
-    db.commit()
+    db_commit_retry(db)
     log_admin_action("registration_approve", f"{reg_id} -> {profile_code}")
 
     bonus = registration_bonus_coins()
@@ -3186,6 +3711,61 @@ def admin_decide_registration(reg_id, action):
     flash(f"Registration approved — profile {profile_code} is now live. You can review/edit it any time. "
           f"{bonus} Match Coins credited to {row['phone']}.", "success")
     return redirect(url_for("admin_registrations"))
+
+
+# ======================================================================
+# ADMIN — HELP SHADI
+# ======================================================================
+HELP_SHADI_STATUSES = ("pending", "under_review", "approved", "rejected", "completed")
+
+
+@app.route("/admin/help-shadi")
+@admin_required
+def admin_help_shadi():
+    db = get_db()
+    status_filter = request.args.get("status", "pending")
+    if status_filter != "all":
+        rows = db.execute(
+            "SELECT * FROM help_shadi_requests WHERE status = ? ORDER BY created_at DESC", (status_filter,)
+        ).fetchall()
+    else:
+        rows = db.execute("SELECT * FROM help_shadi_requests ORDER BY created_at DESC").fetchall()
+    return render_template("admin_help_shadi.html", rows=rows, status_filter=status_filter,
+                            statuses=HELP_SHADI_STATUSES)
+
+
+@app.route("/admin/help-shadi/<int:req_id>/document")
+@admin_required
+def admin_help_shadi_document(req_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM help_shadi_requests WHERE id = ?", (req_id,)).fetchone()
+    if not row or not row["document_filename"]:
+        abort(404)
+    resp = send_from_directory(PRIVATE_HELP_SHADI_DOCS_DIR, row["document_filename"])
+    resp.headers["Cache-Control"] = "no-store, private"
+    return resp
+
+
+@app.route("/admin/help-shadi/<int:req_id>/<action>", methods=["POST"])
+@admin_required
+def admin_decide_help_shadi(req_id, action):
+    if action not in HELP_SHADI_STATUSES:
+        abort(400)
+    db = get_db()
+    row = db.execute("SELECT * FROM help_shadi_requests WHERE id = ?", (req_id,)).fetchone()
+    if not row:
+        abort(404)
+
+    admin_notes = request.form.get("admin_notes", "").strip()[:800]
+    decided_at = datetime.now().isoformat() if action in ("approved", "rejected", "completed") else row["decided_at"]
+    db.execute(
+        "UPDATE help_shadi_requests SET status = ?, admin_notes = ?, decided_at = ? WHERE id = ?",
+        (action, admin_notes or row["admin_notes"], decided_at, req_id),
+    )
+    db_commit_retry(db)
+    log_admin_action(f"help_shadi_{action}", str(req_id))
+    flash(f"Help Shadi request marked as {action.replace('_', ' ')}.", "success")
+    return redirect(url_for("admin_help_shadi", status=request.args.get("status", "pending")))
 
 
 # ======================================================================
@@ -3219,7 +3799,7 @@ def admin_decide_photo_request(req_id, action):
         "UPDATE photo_requests SET status = ?, decided_at = ? WHERE id = ?",
         (action, datetime.now().isoformat(), req_id),
     )
-    db.commit()
+    db_commit_retry(db)
     log_admin_action(f"photo_request_{action}", str(req_id))
     flash(f"Photo request marked as {action}.", "success")
     return redirect(url_for("admin_photo_requests"))
@@ -3234,12 +3814,29 @@ SETTINGS_TEXT_FIELDS = [
     "registration_price", "upi_id",
     "primary_color", "secondary_color", "accent_color", "hero_heading", "hero_subheading",
     "footer_text", "coin_value_inr", "registration_bonus_coins",
+    "help_shadi_display_name",
+    "instagram_url", "facebook_url", "youtube_url", "telegram_url",
 ]
 
 # Background images the admin can upload from Appearance Settings without
 # touching any code/CSS. Each maps a settings key -> the CSS variable that
 # picks it up (see base.html, which turns these into --*-bg-image vars).
 APPEARANCE_IMAGE_FIELDS = ["nav_bg_image", "hero_bg_image", "section_bg_image", "footer_bg_image"]
+
+SOCIAL_URL_FIELDS = ["instagram_url", "facebook_url", "youtube_url", "telegram_url"]
+
+
+def _sanitize_social_url(value):
+    """Only ever allow http(s) links to be saved as a social URL — these
+    render straight into an href attribute, so a javascript: or data:
+    scheme here would be a stored-XSS vector even though only an admin
+    can set it. Empty stays empty (hides the icon)."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if not re.match(r"^https?://", value, re.IGNORECASE):
+        return ""
+    return value[:300]
 
 
 @app.route("/admin/settings", methods=["GET", "POST"])
@@ -3249,6 +3846,8 @@ def admin_settings():
     if request.method == "POST":
         for key in SETTINGS_TEXT_FIELDS:
             value = request.form.get(key, "").strip()[:500]
+            if key in SOCIAL_URL_FIELDS:
+                value = _sanitize_social_url(value)
             db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
@@ -3299,7 +3898,7 @@ def admin_settings():
                 db.execute("INSERT INTO settings (key, value) VALUES (?, '') "
                            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (field,))
 
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("update_settings")
         flash("Website settings updated.", "success")
         return redirect(url_for("admin_settings"))
@@ -3343,7 +3942,7 @@ def admin_appearance():
                            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, preset[key]))
             db.execute("INSERT INTO settings (key, value) VALUES ('theme_preset', ?) "
                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (preset_key,))
-            db.commit()
+            db_commit_retry(db)
             log_admin_action("apply_theme_preset", preset_key)
             flash(f"Applied \"{preset['label']}\" theme to the whole site.", "success")
             return redirect(url_for("admin_appearance"))
@@ -3361,7 +3960,7 @@ def admin_appearance():
                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
             db.execute("INSERT INTO settings (key, value) VALUES ('font_button', 'Inter') "
                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-            db.commit()
+            db_commit_retry(db)
             log_admin_action("reset_theme")
             flash("Theme reset to default.", "success")
             return redirect(url_for("admin_appearance"))
@@ -3401,7 +4000,7 @@ def admin_appearance():
                     db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
                                "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, val))
 
-            db.commit()
+            db_commit_retry(db)
             log_admin_action("update_theme")
             flash("Theme saved and applied to the whole site.", "success")
             return redirect(url_for("admin_appearance"))
@@ -3422,7 +4021,7 @@ def admin_appearance():
                     "INSERT INTO custom_fonts (label, filename, weight, created_at) VALUES (?, ?, ?, ?)",
                     (label, name, weight, datetime.now().isoformat()),
                 )
-                db.commit()
+                db_commit_retry(db)
                 log_admin_action("upload_font", label)
                 flash(f'Font "{label}" uploaded. Select it from the dropdown above.', "success")
             except ImageValidationError as e:
@@ -3435,7 +4034,7 @@ def admin_appearance():
             if row:
                 delete_file_quietly(FONT_DIR, row["filename"])
                 db.execute("DELETE FROM custom_fonts WHERE id = ?", (font_id,))
-                db.commit()
+                db_commit_retry(db)
                 log_admin_action("delete_font", row["label"])
                 flash("Font removed.", "success")
             return redirect(url_for("admin_appearance"))
@@ -3492,7 +4091,7 @@ def admin_add_banner():
             (slot, title, link_url, image_name, start_date or None, end_date or None,
              sort_order, datetime.now().isoformat()),
         )
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("add_banner", slot)
         flash("Banner added.", "success")
         return redirect(url_for("admin_banners"))
@@ -3505,7 +4104,7 @@ def admin_add_banner():
 def admin_toggle_banner(banner_id):
     db = get_db()
     db.execute("UPDATE banners SET is_active = 1 - is_active WHERE id = ?", (banner_id,))
-    db.commit()
+    db_commit_retry(db)
     log_admin_action("toggle_banner", str(banner_id))
     return redirect(url_for("admin_banners"))
 
@@ -3518,7 +4117,7 @@ def admin_delete_banner(banner_id):
     if banner:
         delete_file_quietly(BANNERS_DIR, banner["image_name"])
         db.execute("DELETE FROM banners WHERE id = ?", (banner_id,))
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("delete_banner", str(banner_id))
         flash("Banner deleted.", "success")
     return redirect(url_for("admin_banners"))
@@ -3746,7 +4345,7 @@ def shop_checkout():
             else:
                 db.execute("UPDATE shop_products SET stock = MAX(stock - ?, 0) WHERE id = ?", (item["qty"], product["id"]))
 
-        db.commit()
+        db_commit_retry(db)
         save_cart([])
 
         notify_admin(
@@ -3754,6 +4353,13 @@ def shop_checkout():
             f"{customer_name} ({customer_phone}) placed order {order_code} for ₹{final_total}"
             f"{f' (after ₹{discount_amount} coin discount, {coins_used} coins used)' if coins_used else ''}. "
             f"Review: {request.url_root.rstrip('/')}{url_for('admin_shop_orders')}",
+        )
+        create_admin_event(
+            "shop_order",
+            f"New shop order — {order_code}",
+            f"{customer_name} ({customer_phone}) for ₹{final_total}.",
+            order_code,
+            url_for("admin_shop_orders"),
         )
         return redirect(url_for("shop_order_status", order_code=order_code))
 
@@ -3768,6 +4374,48 @@ def shop_order_status(order_code):
         abort(404)
     items = db.execute("SELECT * FROM shop_order_items WHERE order_id = ?", (order["id"],)).fetchall()
     return render_template("shop_order_status.html", order=order, items=items)
+
+
+@app.route("/shop/order/<order_code>/invoice")
+def shop_order_invoice(order_code):
+    """Public invoice/receipt download — gated only by knowledge of the
+    order_code, same trust model as shop_order_status above (the code is
+    the customer's reference number, shown to them right after checkout
+    and never listed publicly anywhere)."""
+    db = get_db()
+    order = db.execute("SELECT * FROM shop_orders WHERE order_code = ?", (order_code,)).fetchone()
+    if not order:
+        abort(404)
+    items = db.execute("SELECT * FROM shop_order_items WHERE order_id = ?", (order["id"],)).fetchall()
+    pdf_buf = generate_shop_invoice_pdf_bytes(
+        order, items, get_setting("brand_name", "Matrimonial Services"),
+        get_setting("brand_phone", ""), get_setting("brand_location", ""),
+    )
+    return send_file(
+        pdf_buf, mimetype="application/pdf", as_attachment=True,
+        download_name=f"{order['order_code']}_invoice.pdf",
+    )
+
+
+@app.route("/track-order", methods=["GET", "POST"])
+def track_order():
+    """Self-service order lookup. shop_order_status already shows full
+    status/timeline for a known order_code — this page exists so a
+    customer who didn't bookmark that link (or is on a different device)
+    can find their order again just by typing the code they were given
+    at checkout."""
+    if request.method == "POST":
+        code = request.form.get("order_code", "").strip().upper()
+        if not code:
+            flash("Please enter your Order ID.", "error")
+            return render_template("track_order.html")
+        db = get_db()
+        order = db.execute("SELECT order_code FROM shop_orders WHERE order_code = ?", (code,)).fetchone()
+        if not order:
+            flash("We couldn't find an order with that ID. Please check and try again.", "error")
+            return render_template("track_order.html")
+        return redirect(url_for("shop_order_status", order_code=order["order_code"]))
+    return render_template("track_order.html")
 
 
 # ======================================================================
@@ -3814,7 +4462,7 @@ def admin_testimonial_add():
              1 if request.form.get("is_featured") == "1" else 0,
              request.form.get("sort_order", 0, type=int) or 0, datetime.now().isoformat()),
         )
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("add_testimonial", f"{groom_name} & {bride_name}")
         flash("Success story added.", "success")
         return redirect(url_for("admin_testimonials"))
@@ -3856,7 +4504,7 @@ def admin_testimonial_edit(t_id):
              1 if request.form.get("is_featured") == "1" else 0,
              request.form.get("sort_order", 0, type=int) or 0, t_id),
         )
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("edit_testimonial", f"{groom_name} & {bride_name}")
         flash("Success story updated.", "success")
         return redirect(url_for("admin_testimonials"))
@@ -3871,7 +4519,7 @@ def admin_testimonial_toggle_approved(t_id):
     t = db.execute("SELECT * FROM testimonials WHERE id = ?", (t_id,)).fetchone()
     if t:
         db.execute("UPDATE testimonials SET is_approved = ? WHERE id = ?", (0 if t["is_approved"] else 1, t_id))
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("toggle_testimonial_approved", str(t_id))
     return redirect(url_for("admin_testimonials"))
 
@@ -3885,7 +4533,7 @@ def admin_testimonial_delete(t_id):
         if t["photo_filename"]:
             delete_file_quietly(TESTIMONIALS_DIR, t["photo_filename"])
         db.execute("DELETE FROM testimonials WHERE id = ?", (t_id,))
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("delete_testimonial", str(t_id))
         flash("Success story deleted.", "success")
     return redirect(url_for("admin_testimonials"))
@@ -3917,16 +4565,16 @@ def admin_notifications():
                      request.form.get("action_url", "").strip()[:300] or None,
                      datetime.now().isoformat(), expires_at),
                 )
-                db.commit()
+                db_commit_retry(db)
                 log_admin_action("create_notification", title)
                 flash("Notification pushed live.", "success")
         elif action == "deactivate":
             db.execute("UPDATE notifications SET is_active = 0 WHERE id = ?", (request.form.get("notif_id"),))
-            db.commit()
+            db_commit_retry(db)
             flash("Notification withdrawn.", "success")
         elif action == "delete":
             db.execute("DELETE FROM notifications WHERE id = ?", (request.form.get("notif_id"),))
-            db.commit()
+            db_commit_retry(db)
             flash("Notification deleted.", "success")
         return redirect(url_for("admin_notifications"))
 
@@ -3973,14 +4621,14 @@ def admin_shop_categories():
                 slug = unique_slug(db, "shop_categories", slugify(name))
                 db.execute("INSERT INTO shop_categories (name, slug, sort_order) VALUES (?, ?, ?)",
                            (name, slug, request.form.get("sort_order", 0, type=int) or 0))
-                db.commit()
+                db_commit_retry(db)
                 log_admin_action("add_shop_category", name)
                 flash(f'Category "{name}" added.', "success")
         elif action == "delete":
             cat_id = request.form.get("category_id")
             db.execute("UPDATE shop_products SET category_id = NULL WHERE category_id = ?", (cat_id,))
             db.execute("DELETE FROM shop_categories WHERE id = ?", (cat_id,))
-            db.commit()
+            db_commit_retry(db)
             log_admin_action("delete_shop_category", str(cat_id))
             flash("Category deleted. Its products are now uncategorised.", "success")
         elif action == "rename":
@@ -3988,7 +4636,7 @@ def admin_shop_categories():
             name = request.form.get("name", "").strip()[:80]
             if name:
                 db.execute("UPDATE shop_categories SET name = ? WHERE id = ?", (name, cat_id))
-                db.commit()
+                db_commit_retry(db)
                 flash("Category updated.", "success")
         return redirect(url_for("admin_shop_categories"))
 
@@ -4098,7 +4746,7 @@ def admin_shop_product_add():
                     db.execute("INSERT INTO shop_variants (product_id, size, color, stock) VALUES (?, ?, ?, ?)",
                                (product_id, size.strip()[:40], color.strip()[:40], int(stock or 0)))
 
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("add_shop_product", name)
         flash(f'Product "{name}" created.', "success")
         return redirect(url_for("admin_shop_products"))
@@ -4177,7 +4825,7 @@ def admin_shop_product_edit(product_id):
         else:
             db.execute("DELETE FROM shop_variants WHERE product_id = ?", (product_id,))
 
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("edit_shop_product", name)
         flash("Product updated.", "success")
         return redirect(url_for("admin_shop_products"))
@@ -4194,7 +4842,7 @@ def admin_shop_product_delete(product_id):
         for img in filter(None, (product["images"] or "").split(",")):
             delete_file_quietly(SHOP_IMAGES_DIR, img)
         db.execute("DELETE FROM shop_products WHERE id = ?", (product_id,))
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("delete_shop_product", product["name"])
         flash("Product deleted.", "success")
     return redirect(url_for("admin_shop_products"))
@@ -4209,7 +4857,7 @@ def admin_shop_product_toggle(product_id):
         new_status = "inactive" if product["status"] == "active" else "active"
         db.execute("UPDATE shop_products SET status = ?, updated_at = ? WHERE id = ?",
                    (new_status, datetime.now().isoformat(), product_id))
-        db.commit()
+        db_commit_retry(db)
         log_admin_action("toggle_shop_product", f"{product['name']} -> {new_status}")
     return redirect(request.referrer or url_for("admin_shop_products"))
 
@@ -4272,7 +4920,7 @@ def admin_shop_order_update(order_id):
 
     db.execute("UPDATE shop_orders SET order_status = ?, payment_status = ?, updated_at = ? WHERE id = ?",
                (new_order_status, new_payment_status, datetime.now().isoformat(), order_id))
-    db.commit()
+    db_commit_retry(db)
     log_admin_action("update_shop_order", f"{order['order_code']} -> {new_order_status}/{new_payment_status}")
     flash("Order updated.", "success")
     return redirect(url_for("admin_shop_order_detail", order_id=order_id))
@@ -4297,6 +4945,18 @@ def err_403(e):
 def err_413(e):
     return render_template("error.html", code=413, title="File Too Large",
                             message="The file you tried to upload is too large."), 413
+
+
+@app.errorhandler(429)
+def err_429(e):
+    return render_template("error.html", code=429, title="Too Many Attempts",
+                            message="You've tried this a few too many times. Please wait a few minutes and try again."), 429
+
+
+@app.errorhandler(503)
+def err_503(e):
+    return render_template("error.html", code=503, title="Temporarily Unavailable",
+                            message="We're briefly unavailable — please try again in a moment."), 503
 
 
 @app.errorhandler(400)

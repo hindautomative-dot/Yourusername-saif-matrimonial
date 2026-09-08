@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Admin Notifications{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block content %}
+
+<section class="container">
+    <h1 class="section-title">Notifications</h1>
+    <p class="section-sub">Every new payment, registration, {{ help_shadi_name }} request, photo request, and shop order lands here — most recent first.</p>
+
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>When</th><th>Type</th><th>Details</th><th></th></tr>
+            {% for r in rows %}
+            <tr style="{{ 'font-weight:600;' if not r.is_read }}">
+                <td style="white-space:nowrap;">{{ r.created_at[:16].replace('T',' ') }}</td>
+                <td>
+                    {% if r.event_type == 'payment' %}💳 Payment
+                    {% elif r.event_type == 'package' %}📦 Package
+                    {% elif r.event_type == 'registration' %}📝 Registration
+                    {% elif r.event_type == 'help_shadi' %}🤲 {{ help_shadi_name }}
+                    {% elif r.event_type == 'photo_request' %}📷 Photo Request
+                    {% elif r.event_type == 'shop_order' %}🛍️ Shop Order
+                    {% else %}{{ r.event_type }}{% endif %}
+                </td>
+                <td>
+                    <strong>{{ r.title }}</strong>
+                    {% if r.body %}<br><span class="muted" style="font-size:12.5px;">{{ r.body }}</span>{% endif %}
+                </td>
+                <td>
+                    {% if r.action_url %}<a class="btn btn-sm btn-outline" href="{{ r.action_url }}">View</a>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">🔔</div>
+        <p>No notifications yet.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

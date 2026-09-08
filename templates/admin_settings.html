@@ -138,6 +138,22 @@
         <label>Footer Note (optional, shown after copyright line)</label>
         <input type="text" name="footer_text" value="{{ settings.footer_text }}">
 
+        <h3 class="section-label">Help Shadi</h3>
+        <label>Display Name</label>
+        <input type="text" name="help_shadi_display_name" value="{{ settings.help_shadi_display_name or 'Help Shadi' }}" maxlength="60">
+        <div class="helptext">Shown in the nav, footer, and on the Help Shadi pages. The web address stays /help-shadi either way, so nothing breaks if you rename this.</div>
+
+        <h3 class="section-label">Social Media</h3>
+        <div class="helptext" style="margin-bottom:10px;">Leave any field blank to hide that icon. Only http(s) links are accepted.</div>
+        <label>Instagram URL</label>
+        <input type="url" name="instagram_url" value="{{ settings.instagram_url }}" placeholder="https://instagram.com/yourpage">
+        <label>Facebook URL</label>
+        <input type="url" name="facebook_url" value="{{ settings.facebook_url }}" placeholder="https://facebook.com/yourpage">
+        <label>YouTube URL</label>
+        <input type="url" name="youtube_url" value="{{ settings.youtube_url }}" placeholder="https://youtube.com/@yourchannel">
+        <label>Telegram URL</label>
+        <input type="url" name="telegram_url" value="{{ settings.telegram_url }}" placeholder="https://t.me/yourchannel">
+
         <div style="margin-top:22px; display:flex; gap:10px;">
             <button class="btn btn-primary" type="submit">Save Settings</button>
             <a class="btn btn-outline" href="{{ url_for('admin_dashboard') }}">Back to Dashboard</a>
