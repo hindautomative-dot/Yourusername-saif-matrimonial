@@ -32,7 +32,6 @@
         --emerald: {{ primary_color }};
         --emerald-dark: {{ secondary_color }};
         --gold: {{ accent_color }};
-        --gold-soft: color-mix(in srgb, {{ accent_color }} 55%, white);
         --ivory: {{ background_color }};
         --charcoal: {{ text_color }};
         --muted: {{ muted_color }};
@@ -115,9 +114,7 @@
             <a href="{{ url_for('shop_index') }}">Shop</a>
             <a href="{{ url_for('how_it_works') }}">How It Works</a>
             <a href="{{ url_for('faq') }}">FAQ</a>
-            <a href="{{ url_for('help_shadi') }}">{{ help_shadi_name }}</a>
             <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
-            <a href="{{ url_for('track_order') }}">Track Order</a>
             <a href="{{ url_for('index') }}#contact">Contact</a>
             {% if session.get('is_admin') %}
                 <a href="{{ url_for('admin_dashboard') }}" class="nav-cta nav-cta-outline">Admin <span id="adminPendingBadge" class="badge badge-pending" style="display:none; margin-left:4px;"></span></a>
@@ -135,9 +132,7 @@
         <a href="{{ url_for('shop_index') }}">Shop</a>
         <a href="{{ url_for('how_it_works') }}">How It Works</a>
         <a href="{{ url_for('faq') }}">FAQ</a>
-        <a href="{{ url_for('help_shadi') }}">{{ help_shadi_name }}</a>
         <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
-        <a href="{{ url_for('track_order') }}">Track Order</a>
         <a href="{{ url_for('index') }}#contact">Contact</a>
         <a href="{{ url_for('shop_cart_view') }}">🛍️ Cart{% if cart_count %} ({{ cart_count }}){% endif %}</a>
         <a href="{{ url_for('register_yourself') }}" class="nav-mobile-cta">Register Yourself — ₹{{ registration_price }}</a>
@@ -186,14 +181,12 @@
             <a href="{{ url_for('how_it_works') }}">How It Works</a>
             <a href="{{ url_for('register_yourself') }}">Register</a>
             <a href="{{ url_for('faq') }}">FAQ</a>
-            <a href="{{ url_for('help_shadi') }}">{{ help_shadi_name }}</a>
         </div>
         <div class="footer-col" id="contact">
             <h4>For Users</h4>
             <a href="{{ url_for('register_yourself') }}">Register Yourself</a>
             <a href="{{ url_for('index') }}#profiles">Browse Profiles</a>
             <a href="{{ url_for('my_requests') if session.get('verified_phone') else url_for('verify_access') }}">My Requests</a>
-            <a href="{{ url_for('track_order') }}">Track My Order</a>
             <a href="{{ url_for('admin_login') }}">Admin</a>
         </div>
         <div class="footer-col">
@@ -203,31 +196,22 @@
             <div style="font-size:13.5px; margin-top:10px;">📞 {{ business_phone }}</div>
             {% if business_email %}<div style="font-size:13.5px; margin-top:4px;">✉️ {{ business_email }}</div>{% endif %}
             <div style="font-size:13.5px; margin-top:4px;">📍 {{ business_location }}</div>
-            {% if instagram_url or facebook_url or youtube_url or telegram_url %}
-            <div class="footer-social-row" style="display:flex; gap:10px; margin-top:14px;">
-                {% if instagram_url %}<a href="{{ instagram_url }}" target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram">📷</a>{% endif %}
-                {% if facebook_url %}<a href="{{ facebook_url }}" target="_blank" rel="noopener noreferrer" aria-label="Facebook" title="Facebook">📘</a>{% endif %}
-                {% if youtube_url %}<a href="{{ youtube_url }}" target="_blank" rel="noopener noreferrer" aria-label="YouTube" title="YouTube">▶️</a>{% endif %}
-                {% if telegram_url %}<a href="{{ telegram_url }}" target="_blank" rel="noopener noreferrer" aria-label="Telegram" title="Telegram">✈️</a>{% endif %}
-            </div>
-            {% endif %}
         </div>
     </div>
+    {% if social_links and (social_links.whatsapp or social_links.instagram or social_links.facebook or social_links.youtube or social_links.telegram) %}
+    <div class="social-links">
+        {% if social_links.whatsapp %}<a href="{{ social_links.whatsapp }}" target="_blank" rel="noopener" aria-label="WhatsApp">💬</a>{% endif %}
+        {% if social_links.instagram %}<a href="{{ social_links.instagram }}" target="_blank" rel="noopener" aria-label="Instagram">📷</a>{% endif %}
+        {% if social_links.facebook %}<a href="{{ social_links.facebook }}" target="_blank" rel="noopener" aria-label="Facebook">📘</a>{% endif %}
+        {% if social_links.youtube %}<a href="{{ social_links.youtube }}" target="_blank" rel="noopener" aria-label="YouTube">▶️</a>{% endif %}
+        {% if social_links.telegram %}<a href="{{ social_links.telegram }}" target="_blank" rel="noopener" aria-label="Telegram">✈️</a>{% endif %}
+    </div>
+    {% endif %}
     <div class="footer-bottom">
         © {{ current_year }} {{ business_name }}. All rights reserved. &nbsp;·&nbsp; Trusted Connections, Blessed Beginnings
         {% if footer_text %}&nbsp;·&nbsp;{{ footer_text }}{% endif %}
     </div>
 </footer>
-
-<div class="welcome-overlay" id="welcomeOverlay" hidden>
-    <div class="welcome-card" role="dialog" aria-modal="true" aria-labelledby="welcomeHeading">
-        <button type="button" class="welcome-close" id="welcomeClose" aria-label="Close">✕</button>
-        <p class="welcome-bismillah">Bismillah hir Rahman nir Raheem</p>
-        <h2 class="welcome-heading" id="welcomeHeading">Let's Make Marriage Easier</h2>
-        <p class="welcome-message">Marriage is a sacred covenant of hearts. We pray your journey towards a blessed Nikah begins here.</p>
-        <button type="button" class="btn btn-primary welcome-cta" id="welcomeCta">Begin Your Journey</button>
-    </div>
-</div>
 
 <a class="whatsapp-fab" href="https://wa.me/91{{ whatsapp_number }}" target="_blank" rel="noopener" aria-label="WhatsApp support">💬</a>
 
@@ -254,7 +238,6 @@
 
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
-<script src="{{ url_for('static', filename='js/welcome.js') }}"></script>
 {% if session.get('is_admin') %}
 <script src="{{ url_for('static', filename='js/admin-notify.js') }}"></script>
 {% endif %}

@@ -5,169 +5,82 @@
 
 <section class="container">
     <h1 class="section-title">Admin Dashboard</h1>
-    <p class="muted" style="margin-top:-4px; margin-bottom:22px; font-size:13.5px;">
-        Everything that needs your attention, grouped so you don't have to hunt for it.
-    </p>
 
-    {% if stats.needs_attention %}
-    <div class="admin-alert is-warn">
-        <div>
-            <p class="admin-alert-title">🔴 {{ stats.needs_attention }} item{{ 's' if stats.needs_attention != 1 else '' }} waiting on you</p>
-            <p class="admin-alert-sub">Tap any item below to review it now.</p>
-        </div>
-        <div class="admin-alert-chips">
-            {% if stats.pending %}<a class="admin-alert-chip" href="{{ url_for('admin_requests') }}">Unlock Requests · {{ stats.pending }}</a>{% endif %}
-            {% if stats.reg_pending %}<a class="admin-alert-chip" href="{{ url_for('admin_registrations') }}">Registrations · {{ stats.reg_pending }}</a>{% endif %}
-            {% if stats.photo_req_pending %}<a class="admin-alert-chip" href="{{ url_for('admin_photo_requests') }}">Photo Requests · {{ stats.photo_req_pending }}</a>{% endif %}
-            {% if stats.shop_orders_pending %}<a class="admin-alert-chip" href="{{ url_for('admin_shop_orders') }}">Shop Orders · {{ stats.shop_orders_pending }}</a>{% endif %}
-            {% if stats.help_shadi_pending %}<a class="admin-alert-chip" href="{{ url_for('admin_help_shadi') }}">{{ help_shadi_name }} · {{ stats.help_shadi_pending }}</a>{% endif %}
-        </div>
+    <div class="stat-grid">
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles') }}"><div class="num">{{ stats.total }}</div><div class="label">Total Profiles</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', source='self') }}"><div class="num">{{ stats.self_registered }}</div><div class="label">Self Registered</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', source='admin') }}"><div class="num">{{ stats.admin_registered }}</div><div class="label">Admin Registered</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', verified='yes') }}"><div class="num">{{ stats.verified_profiles }}</div><div class="label">Verified Profiles</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', status='active') }}"><div class="num">{{ stats.active }}</div><div class="label">Active Profiles</div></a>
+        <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', status='inactive') }}"><div class="num">{{ stats.hidden }}</div><div class="label">Inactive / Hidden</div></a>
+        <div class="stat-card"><div class="num">{{ stats.pending }}</div><div class="label">Pending Requests</div></div>
+        <div class="stat-card"><div class="num">{{ stats.unlocked }}</div><div class="label">Unlocked</div></div>
+        <div class="stat-card"><div class="num">{{ stats.rejected }}</div><div class="label">Rejected</div></div>
+        <div class="stat-card"><div class="num">{{ stats.agents_active }}/{{ stats.agents_total }}</div><div class="label">Active Agents</div></div>
+        <div class="stat-card"><div class="num">{{ stats.reg_pending }}</div><div class="label">Pending Registrations (₹{{ registration_price }})</div></div>
+        <div class="stat-card"><div class="num">{{ stats.reg_total }}</div><div class="label">Total Self-Registrations</div></div>
+    </div>
+
+    <div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:34px;">
+        <a class="btn btn-primary" href="{{ url_for('admin_add_profile') }}">+ Add Profile</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_profiles') }}">Manage Profiles</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_requests') }}">Pending Requests</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_registrations') }}">Self-Registrations {% if stats.reg_pending %}<span class="badge badge-pending">{{ stats.reg_pending }}</span>{% endif %}</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_photo_requests') }}">Photo Requests {% if stats.photo_req_pending %}<span class="badge badge-pending">{{ stats.photo_req_pending }}</span>{% endif %}</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_agents') }}">Agents</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_settings') }}">Website Settings</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_appearance') }}">Appearance / Theme</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_shop_products') }}">Shop Products</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_shop_categories') }}">Shop Categories</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_shop_orders') }}">Shop Orders</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_testimonials') }}">Success Stories</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_notifications') }}">Notifications</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_banners') }}">Banners</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_logout') }}">Logout</a>
+    </div>
+
+    <h2 class="section-title" style="font-size:20px;">Recent Pending Requests</h2>
+    {% if recent_pending %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>Profile</th><th>Requested By</th><th>Phone</th><th>When</th><th></th></tr>
+            {% for r in recent_pending %}
+            <tr>
+                <td>{{ r.profile_code }} — {{ r.name }}</td>
+                <td>{{ r.user_name or '—' }}</td>
+                <td>{{ r.user_phone }}</td>
+                <td>{{ r.requested_at[:16].replace('T',' ') }}</td>
+                <td><a class="btn btn-sm btn-outline" href="{{ url_for('admin_requests') }}">Review</a></td>
+            </tr>
+            {% endfor %}
+        </table>
     </div>
     {% else %}
-    <div class="admin-alert is-ok">
-        <div>
-            <p class="admin-alert-title">✅ You're all caught up</p>
-            <p class="admin-alert-sub">No pending payments, registrations or requests right now.</p>
-        </div>
+    <div class="empty-state">
+        <div class="icon">✅</div>
+        <p>You're all caught up. No pending requests.</p>
     </div>
     {% endif %}
 
-    <!-- ============ PAYMENTS & REQUESTS (most time-sensitive) ============ -->
-    <div class="admin-section">
-        <div class="admin-section-head"><span class="ic">💳</span> Payments &amp; Requests</div>
-        <div class="admin-tile-grid">
-            <a class="admin-tile{{ ' admin-tile-danger' if stats.pending }}" href="{{ url_for('admin_requests') }}">
-                {% if stats.pending %}<span class="badge badge-pending admin-tile-badge">{{ stats.pending }}</span>{% endif %}
-                <span class="admin-tile-icon">🔓</span>
-                <span class="admin-tile-title">Unlock Requests</span>
-            </a>
-            <a class="admin-tile{{ ' admin-tile-danger' if stats.reg_pending }}" href="{{ url_for('admin_registrations') }}">
-                {% if stats.reg_pending %}<span class="badge badge-pending admin-tile-badge">{{ stats.reg_pending }}</span>{% endif %}
-                <span class="admin-tile-icon">📝</span>
-                <span class="admin-tile-title">Self-Registrations</span>
-            </a>
-            <a class="admin-tile{{ ' admin-tile-danger' if stats.photo_req_pending }}" href="{{ url_for('admin_photo_requests') }}">
-                {% if stats.photo_req_pending %}<span class="badge badge-pending admin-tile-badge">{{ stats.photo_req_pending }}</span>{% endif %}
-                <span class="admin-tile-icon">📷</span>
-                <span class="admin-tile-title">Photo Requests</span>
-            </a>
-            <a class="admin-tile{{ ' admin-tile-danger' if stats.shop_orders_pending }}" href="{{ url_for('admin_shop_orders') }}">
-                {% if stats.shop_orders_pending %}<span class="badge badge-pending admin-tile-badge">{{ stats.shop_orders_pending }}</span>{% endif %}
-                <span class="admin-tile-icon">🛍️</span>
-                <span class="admin-tile-title">Shop Orders</span>
-            </a>
-            <a class="admin-tile{{ ' admin-tile-danger' if stats.help_shadi_pending }}" href="{{ url_for('admin_help_shadi') }}">
-                {% if stats.help_shadi_pending %}<span class="badge badge-pending admin-tile-badge">{{ stats.help_shadi_pending }}</span>{% endif %}
-                <span class="admin-tile-icon">🤲</span>
-                <span class="admin-tile-title">{{ help_shadi_name }}</span>
-            </a>
-            <a class="admin-tile" href="{{ url_for('admin_events') }}">
-                {% if stats.unread_events %}<span class="badge badge-pending admin-tile-badge" id="dashEventsBadge">{{ stats.unread_events }}</span>{% endif %}
-                <span class="admin-tile-icon">🔔</span>
-                <span class="admin-tile-title">Notifications</span>
-            </a>
-        </div>
+    <h2 class="section-title" style="font-size:20px; margin-top:34px;">Recent Admin Activity</h2>
+    {% if recent_activity %}
+    <div class="table-wrap">
+        <table>
+            <tr><th>When</th><th>Admin</th><th>Action</th><th>Detail</th><th>IP</th></tr>
+            {% for a in recent_activity %}
+            <tr>
+                <td>{{ a.created_at[:16].replace('T',' ') }}</td>
+                <td>{{ a.admin_username }}</td>
+                <td>{{ a.action }}</td>
+                <td>{{ a.detail or '—' }}</td>
+                <td>{{ a.ip }}</td>
+            </tr>
+            {% endfor %}
+        </table>
     </div>
-
-    <!-- ============ PROFILES OVERVIEW ============ -->
-    <div class="admin-section">
-        <div class="admin-section-head"><span class="ic">👤</span> Profiles</div>
-        <div class="stat-grid" style="margin-bottom:14px;">
-            <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles') }}"><div class="num">{{ stats.total }}</div><div class="label">Total Profiles</div></a>
-            <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', status='active') }}"><div class="num">{{ stats.active }}</div><div class="label">Active</div></a>
-            <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', status='inactive') }}"><div class="num">{{ stats.hidden }}</div><div class="label">Inactive / Hidden</div></a>
-            <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', verified='yes') }}"><div class="num">{{ stats.verified_profiles }}</div><div class="label">Verified</div></a>
-            <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', source='self') }}"><div class="num">{{ stats.self_registered }}</div><div class="label">Self Registered</div></a>
-            <a class="stat-card stat-card-link" href="{{ url_for('admin_profiles', source='admin') }}"><div class="num">{{ stats.admin_registered }}</div><div class="label">Admin Registered</div></a>
-        </div>
-        <div class="admin-tile-grid">
-            <a class="admin-tile" href="{{ url_for('admin_add_profile') }}"><span class="admin-tile-icon">➕</span><span class="admin-tile-title">Add Profile</span></a>
-            <a class="admin-tile" href="{{ url_for('admin_profiles') }}"><span class="admin-tile-icon">📋</span><span class="admin-tile-title">Manage Profiles</span></a>
-            <a class="admin-tile" href="{{ url_for('admin_agents') }}"><span class="admin-tile-icon">🧑‍💼</span><span class="admin-tile-title">Agents ({{ stats.agents_active }}/{{ stats.agents_total }})</span></a>
-            <a class="admin-tile" href="{{ url_for('admin_testimonials') }}"><span class="admin-tile-icon">💬</span><span class="admin-tile-title">Success Stories</span></a>
-        </div>
-    </div>
-
-    <!-- ============ SHOP ============ -->
-    <div class="admin-section">
-        <div class="admin-section-head"><span class="ic">🛍️</span> Islamic Shop &nbsp;<span class="muted" style="text-transform:none; font-weight:400; font-size:11.5px;">({{ stats.shop_orders_total }} orders total)</span></div>
-        <div class="admin-tile-grid">
-            <a class="admin-tile" href="{{ url_for('admin_shop_orders') }}">
-                {% if stats.shop_orders_pending %}<span class="badge badge-pending admin-tile-badge">{{ stats.shop_orders_pending }}</span>{% endif %}
-                <span class="admin-tile-icon">📦</span><span class="admin-tile-title">Orders</span>
-            </a>
-            <a class="admin-tile" href="{{ url_for('admin_shop_products') }}"><span class="admin-tile-icon">🛒</span><span class="admin-tile-title">Products</span></a>
-            <a class="admin-tile" href="{{ url_for('admin_shop_categories') }}"><span class="admin-tile-icon">🗂️</span><span class="admin-tile-title">Categories</span></a>
-        </div>
-    </div>
-
-    <!-- ============ BRANDING & CONTENT ============ -->
-    <div class="admin-section">
-        <div class="admin-section-head"><span class="ic">🎨</span> Branding &amp; Content</div>
-        <div class="admin-tile-grid">
-            <a class="admin-tile" href="{{ url_for('admin_settings') }}"><span class="admin-tile-icon">⚙️</span><span class="admin-tile-title">Website Settings</span></a>
-            <a class="admin-tile" href="{{ url_for('admin_appearance') }}"><span class="admin-tile-icon">🖌️</span><span class="admin-tile-title">Appearance / Theme</span></a>
-            <a class="admin-tile" href="{{ url_for('admin_banners') }}"><span class="admin-tile-icon">🖼️</span><span class="admin-tile-title">Banners</span></a>
-            <a class="admin-tile" href="{{ url_for('admin_notifications') }}"><span class="admin-tile-icon">📣</span><span class="admin-tile-title">Site Announcements</span></a>
-        </div>
-    </div>
-
-    <!-- ============ SYSTEM ============ -->
-    <div class="admin-section">
-        <div class="admin-section-head"><span class="ic">🛠️</span> System</div>
-        <div class="admin-tile-grid">
-            <a class="admin-tile" href="{{ url_for('admin_backup') }}"><span class="admin-tile-icon">💾</span><span class="admin-tile-title">Backup</span></a>
-            <a class="admin-tile admin-tile-logout" href="{{ url_for('admin_logout') }}"><span class="admin-tile-icon">🚪</span><span class="admin-tile-title">Logout</span></a>
-        </div>
-    </div>
-
-    <!-- ============ ACTIVITY ============ -->
-    <div class="admin-section">
-        <div class="admin-section-head"><span class="ic">⏳</span> Recent Pending Requests</div>
-        {% if recent_pending %}
-        <div class="table-wrap">
-            <table>
-                <tr><th>Profile</th><th>Requested By</th><th>Phone</th><th>When</th><th></th></tr>
-                {% for r in recent_pending %}
-                <tr>
-                    <td>{{ r.profile_code }} — {{ r.name }}</td>
-                    <td>{{ r.user_name or '—' }}</td>
-                    <td>{{ r.user_phone }}</td>
-                    <td>{{ r.requested_at[:16].replace('T',' ') }}</td>
-                    <td><a class="btn btn-sm btn-outline" href="{{ url_for('admin_requests') }}">Review</a></td>
-                </tr>
-                {% endfor %}
-            </table>
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <div class="icon">✅</div>
-            <p>You're all caught up. No pending requests.</p>
-        </div>
-        {% endif %}
-    </div>
-
-    <div class="admin-section">
-        <div class="admin-section-head"><span class="ic">🕘</span> Recent Admin Activity</div>
-        {% if recent_activity %}
-        <div class="table-wrap">
-            <table>
-                <tr><th>When</th><th>Admin</th><th>Action</th><th>Detail</th><th>IP</th></tr>
-                {% for a in recent_activity %}
-                <tr>
-                    <td>{{ a.created_at[:16].replace('T',' ') }}</td>
-                    <td>{{ a.admin_username }}</td>
-                    <td>{{ a.action }}</td>
-                    <td>{{ a.detail or '—' }}</td>
-                    <td>{{ a.ip }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-        </div>
-        {% else %}
-        <p class="muted" style="font-size:13.5px;">No activity logged yet.</p>
-        {% endif %}
-    </div>
+    {% else %}
+    <p class="muted" style="font-size:13.5px;">No activity logged yet.</p>
+    {% endif %}
 </section>
 
 {% endblock %}

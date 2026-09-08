@@ -19,9 +19,6 @@
             an OTP (no password to remember).
         </p>
 
-        {% set track_code = request_code %}
-        {% include "_waiting_lounge.html" with context %}
-
         <a class="btn btn-primary btn-block" href="{{ url_for('verify_access') }}" style="margin-top:16px;">Go to My Requests</a>
         <a class="btn btn-outline btn-block" href="{{ url_for('index') }}" style="margin-top:10px;">Back to Home</a>
     </div>

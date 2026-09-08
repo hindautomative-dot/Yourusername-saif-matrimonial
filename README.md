@@ -148,10 +148,18 @@ matrimonial_v2/
 
 ## Known trade-offs (documented on purpose, not hidden)
 
-- **Rate limiting and OTP storage state are in-memory for the limiter,
-  DB-backed for OTP codes** — fine for a single small worker; the
-  limiter won't share state across multiple gunicorn workers/dynos at
-  larger scale. Move to Redis-backed limiting if you outgrow this.
+- **Rate limiting, the settings/filter TTL cache, and OTP storage state
+  are in-memory for the limiter/cache, DB-backed for OTP codes** — each
+  Gunicorn *worker process* has its own copy of this in-memory state
+  (threads within one worker share it, separate worker processes do
+  not). With `--workers 3`, an attacker effectively gets up to ~3x a
+  single limiter's configured attempt count before being locked out
+  process-wide, and the TTL cache is simply rebuilt per worker (correct,
+  just slightly more DB load than a single shared cache would be — still
+  far less than caching nothing). Neither of these is wrong at this
+  scale, but if you move to Redis later, both are natural candidates to
+  migrate to a shared store. Move to Redis-backed limiting/caching if you
+  outgrow this.
 - **SQLite** — simple and sufficient at this scale; the schema uses
   plain parameterized SQL (no ORM), so migrating to PostgreSQL later is
   a contained change, not a rewrite — swap the `sqlite3.connect` calls
@@ -161,3 +169,56 @@ matrimonial_v2/
 - **Payment is still manual UPI, on purpose** — matches the business
   model you described; no automatic payment verification is claimed
   anywhere in the UI.
+
+## Production reliability setup (deploy/ folder)
+
+- `deploy/nginx.conf` — reverse proxy in front of Gunicorn: serves
+  `/static/` directly, gzip, cache headers, per-route rate limiting as a
+  second layer on top of the app's own limiter, max upload body size.
+  Update `server_name` and the upstream socket/paths before enabling.
+- `deploy/saif-matrimonial.service` — systemd unit with `Restart=always`
+  so a crashed worker comes back within seconds. Update
+  User/WorkingDirectory/paths for your server.
+- `Procfile` — now runs Gunicorn with `--worker-class gthread --threads 3`
+  so one slow request (e.g. a large photo upload) doesn't block other
+  users on the same worker. `--workers 3` is a starting point — the rule
+  of thumb is `2 x CPU cores + 1`; check your VPS's actual core count and
+  adjust.
+- `deploy/backup.sh` — daily SQLite + uploads backup via `sqlite3
+  .backup` (safe under WAL, unlike a raw file `cp`) + `rclone` to offsite
+  storage, keeps 7 days rolling. Restore steps are documented as comments
+  at the bottom of the script. Wire it up with cron (see the script's
+  header comment).
+- `deploy/locustfile.py` — load test script. Run against a **staging**
+  copy only (`locust -f deploy/locustfile.py --host https://staging...`);
+  cannot be run from within this environment since it needs network
+  access to your actual staging server. Fill in the commented-out POST
+  task with real staging-safe test data before running write-path tests.
+- `/healthz` route — returns 200 + `{"status":"ok"}` if the DB is
+  reachable, 503 otherwise. Point UptimeRobot (or similar free-tier
+  monitor) at `/` and `/healthz` both, and separately at
+  `/register-yourself` per the original brief.
+- App logs (500 errors + any request over ~200ms) now also write to
+  `<DATA_DIR>/logs/app.log` (rotating, 5MB x 5 files), in addition to
+  wherever Gunicorn's own stderr goes — set `LOG_DIR` to change the
+  location.
+- **When to graduate off SQLite**: stay on SQLite + WAL until you're
+  seeing *sustained* heavy concurrent **writes** — hundreds of
+  payment/registration submissions per minute, not reads. Reads scale
+  fine under WAL well past that. If you hit that point, the schema is
+  plain parameterized SQL with no ORM, so moving to PostgreSQL is a
+  contained driver swap, not a rewrite (see above).
+
+## What was deliberately NOT done in this pass
+
+- Redis, message queues, Kubernetes, microservices, or a managed DB
+  migration — none of the load-testing evidence collected so far shows
+  the single-VPS + SQLite + WAL setup is the bottleneck, so adding any of
+  these now would be complexity without a measured need.
+- A full WebP image-serving pipeline (JPEG/PNG → WebP with fallback) —
+  scoped but not implemented in this pass; Pillow resize-on-upload
+  already runs for all image types, WebP re-encoding is the remaining
+  piece.
+- Full systematic mobile-viewport re-test of every template at
+  360/375/390/414/768/1024 — the button/badge overlap bug was found and
+  fixed, but a template-by-template pass wasn't completed this round.

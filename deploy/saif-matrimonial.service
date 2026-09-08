@@ -1,0 +1,39 @@
+# /etc/systemd/system/saif-matrimonial.service
+# Adjust User/Group/WorkingDirectory/ExecStart paths to your actual server
+# layout, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now saif-matrimonial
+#   sudo systemctl status saif-matrimonial
+
+[Unit]
+Description=Saif Matrimonial Services (Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/saif-matrimonial
+RuntimeDirectory=saif-matrimonial
+EnvironmentFile=/opt/saif-matrimonial/.env
+ExecStart=/opt/saif-matrimonial/venv/bin/gunicorn app:app \
+    --workers 3 --worker-class gthread --threads 3 \
+    --timeout 60 --graceful-timeout 30 --keep-alive 5 \
+    --max-requests 1000 --max-requests-jitter 100 \
+    --bind unix:/run/saif-matrimonial/gunicorn.sock \
+    --access-logfile /var/log/saif-matrimonial/access.log \
+    --error-logfile /var/log/saif-matrimonial/error.log
+ExecReload=/bin/kill -s HUP $MAINPID
+
+Restart=always
+RestartSec=3
+
+# Basic hardening — remove/relax any of these if they break something
+# specific to how this app writes to disk.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/saif-matrimonial
+
+[Install]
+WantedBy=multi-user.target

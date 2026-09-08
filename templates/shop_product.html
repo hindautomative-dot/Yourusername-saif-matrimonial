@@ -22,7 +22,7 @@
             {% if imgs|length > 1 %}
             <div class="product-gallery-thumbs">
                 {% for img in imgs %}
-                <img loading="lazy" decoding="async" src="{{ url_for('static', filename='shop/' + img) }}" class="{{ 'active' if loop.first }}" onclick="document.getElementById('mainProductImg').src=this.src; document.querySelectorAll('.product-gallery-thumbs img').forEach(i=>i.classList.remove('active')); this.classList.add('active');">
+                <img src="{{ url_for('static', filename='shop/' + img) }}" class="{{ 'active' if loop.first }}" onclick="document.getElementById('mainProductImg').src=this.src; document.querySelectorAll('.product-gallery-thumbs img').forEach(i=>i.classList.remove('active')); this.classList.add('active');">
                 {% endfor %}
             </div>
             {% endif %}

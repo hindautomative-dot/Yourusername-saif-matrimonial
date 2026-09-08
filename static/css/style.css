@@ -51,19 +51,19 @@ img { max-width: 100%; display: block; }
 
 /* ---------------- Header ---------------- */
 .site-header {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--emerald-dark) 97%, transparent), color-mix(in srgb, var(--emerald) 94%, transparent));
-    background-image: var(--nav-bg-image, none), linear-gradient(180deg, color-mix(in srgb, var(--emerald-dark) 97%, transparent), color-mix(in srgb, var(--emerald) 94%, transparent));
+    background: linear-gradient(180deg, rgba(7,62,47,.97), rgba(11,90,68,.94));
+    background-image: var(--nav-bg-image, none), linear-gradient(180deg, rgba(7,62,47,.97), rgba(11,90,68,.94));
     background-size: cover; background-position: center;
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid color-mix(in srgb, var(--gold) 25%, transparent);
-    box-shadow: 0 8px 28px color-mix(in srgb, var(--emerald-dark) 22%, transparent);
+    border-bottom: 1px solid rgba(201,168,106,.25);
+    box-shadow: 0 8px 28px rgba(7,40,30,.22);
     position: sticky; top: 0; z-index: 100;
     transition: padding .25s ease, box-shadow .25s ease;
 }
 .site-header.scrolled {
-    box-shadow: 0 10px 32px color-mix(in srgb, var(--emerald-dark) 32%, transparent);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--emerald-dark) 88%, transparent), color-mix(in srgb, var(--emerald) 82%, transparent));
-    background-image: var(--nav-bg-image, none), linear-gradient(180deg, color-mix(in srgb, var(--emerald-dark) 88%, transparent), color-mix(in srgb, var(--emerald) 82%, transparent));
+    box-shadow: 0 10px 32px rgba(7,40,30,.32);
+    background: linear-gradient(180deg, rgba(7,62,47,.88), rgba(11,90,68,.82));
+    background-image: var(--nav-bg-image, none), linear-gradient(180deg, rgba(7,62,47,.88), rgba(11,90,68,.82));
     background-size: cover; background-position: center;
 }
 .site-header-inner {
@@ -118,7 +118,7 @@ img { max-width: 100%; display: block; }
 .nav-mobile {
     display: none; flex-direction: column; gap: 2px;
     border-top: 1px solid rgba(255,255,255,.14);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--emerald-dark) 98%, transparent), color-mix(in srgb, var(--emerald-dark) 96%, black));
+    background: linear-gradient(180deg, rgba(7,62,47,.98), rgba(7,50,38,.98));
     backdrop-filter: blur(14px);
 }
 .nav-mobile a {
@@ -140,7 +140,7 @@ img { max-width: 100%; display: block; }
 }
 .top-banner-slot img { width: 100%; height: auto; max-height: 180px; object-fit: cover; display: block; }
 .top-banner-tag {
-    position: absolute; top: 8px; left: 8px; background: color-mix(in srgb, var(--emerald-dark) 75%, transparent); color: var(--gold-soft);
+    position: absolute; top: 8px; left: 8px; background: rgba(7,40,30,.75); color: var(--gold-soft);
     font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 9px; border-radius: 10px;
 }
 
@@ -335,7 +335,7 @@ body.has-section-bg::before {
 .profile-card:hover .profile-photo img { transform: scale(1.04); }
 .photo-lock-badge {
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; background: color-mix(in srgb, var(--emerald-dark) 35%, transparent); color: #fff; text-align: center; gap: 6px;
+    justify-content: center; background: rgba(7,62,47,.35); color: #fff; text-align: center; gap: 6px;
 }
 .photo-lock-badge .lock-circle {
     width: 46px; height: 46px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.8);
@@ -422,8 +422,8 @@ th { background: #f3f0e6; color: var(--emerald-dark); font-size: 12.5px; text-tr
 
 /* ---------------- Footer ---------------- */
 .site-footer {
-    background: linear-gradient(180deg, var(--emerald-dark), color-mix(in srgb, var(--emerald-dark) 80%, black));
-    background-image: var(--footer-bg-image, none), linear-gradient(180deg, var(--emerald-dark), color-mix(in srgb, var(--emerald-dark) 80%, black));
+    background: linear-gradient(180deg, var(--emerald-dark), #052b20);
+    background-image: var(--footer-bg-image, none), linear-gradient(180deg, var(--emerald-dark), #052b20);
     background-size: cover; background-position: center;
     color: var(--gold-soft); padding: 48px 24px 26px; margin-top: 60px;
     border-top: 1px solid rgba(201,168,106,.25);
@@ -662,15 +662,87 @@ th { background: #f3f0e6; color: var(--emerald-dark); font-size: 12.5px; text-tr
 .mt-0 { margin-top: 0; }
 
 /* ---------------- Extra shine sweep on primary gold CTAs ---------------- */
+/* Changed from an always-on infinite loop (distracting, and was painting on
+   top of the button label during the sweep, hurting contrast) to a single
+   sweep triggered on hover only, as intended. */
 .btn-gold { position: relative; }
 .btn-gold::after {
     content: ""; position: absolute; top: 0; left: -70%; width: 40%; height: 100%;
     background: linear-gradient(115deg, transparent, rgba(255,255,255,.75), transparent);
-    transform: skewX(-18deg); animation: btnShineSweep 3s ease-in-out infinite;
+    transform: skewX(-18deg);
+    opacity: 0; pointer-events: none; z-index: 0;
 }
-@keyframes btnShineSweep {
-    0% { left: -70%; } 55% { left: 130%; } 100% { left: 130%; }
+.btn-gold:hover::after {
+    left: 130%; opacity: 1;
+    transition: left .55s ease, opacity .55s ease;
 }
+
+/* ---------------- Button text/icon overlap fixes ----------------
+   .btn used inline-flex with no wrap and no explicit stacking, so on
+   narrow screens (360-414px) long labels like "Register Yourself — ₹11"
+   could collide with the icon or with the shine/badge overlay. Fix:
+   content always paints above the decorative ::before/::after layers,
+   and the button is allowed to wrap onto a second line cleanly instead
+   of overflowing or overlapping. */
+.btn { flex-wrap: wrap; text-align: center; row-gap: 2px; }
+.btn::before { z-index: 0; }
+.btn-label, .btn-heart-icon, .heart-lock-icon {
+    position: relative; z-index: 1;
+}
+.btn-heart-icon, .heart-lock-icon { flex-shrink: 0; }
+.btn-label { white-space: normal; }
+
+/* Badges sitting next to nav links/buttons (e.g. pending-count) must never
+   sit on top of the label text they're next to. */
+.badge { position: relative; z-index: 1; white-space: nowrap; flex-shrink: 0; }
+
+@media (max-width: 414px) {
+    .btn { gap: 6px; }
+    .btn-label { font-size: 13px; }
+}
+
+/* WCAG AA contrast: the glass ::before highlight is white-on-white at the
+   top of the button and can push light-colored text below 4.5:1 on the
+   lightest gradients (btn-gold, btn-outline-light). Reduce the overlay
+   there rather than relying on font-weight alone to keep contrast up. */
+.btn-gold::before,
+.btn-outline-light::before { background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,0) 45%); }
+.btn-outline-light { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+
+/* ---------------- Respect reduced-motion preference ----------------
+   Disables the hover-lift, the banner shine sweep + auto-rotation cue,
+   the button shine sweep, and the verified-badge glow for anyone who
+   has asked their OS/browser to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+    .btn, .btn:hover, .btn:active { transition: none !important; transform: none !important; }
+    .btn-gold::after { display: none !important; }
+    .banner-shine { display: none !important; }
+    .banner-slide { transition: none !important; }
+    .verified-tick { animation: none !important; }
+    .chatbot-fab, .whatsapp-fab { animation: none !important; }
+}
+
+/* ---------------- Print stylesheet: hide sensitive/protected areas ----
+   Contact details, protected/watermarked photos, and unlock/payment UI
+   should never end up in a printed page or "print to PDF" copy. */
+@media print {
+    .protected-photo, .full-photo-wrap, .contact-block, .unlock-cta,
+    .chatbot-fab, .chatbot-panel, .whatsapp-fab, nav, .site-nav, footer {
+        display: none !important;
+    }
+}
+
+/* ---------------- Social media footer icons ---------------- */
+.social-links { display: flex; gap: 12px; justify-content: center; margin: 10px 0; flex-wrap: wrap; }
+.social-links:empty { display: none; }
+.social-links a {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255,255,255,.12); color: inherit; font-size: 16px;
+    transition: transform .16s ease, background .16s ease;
+}
+.social-links a:hover { transform: translateY(-2px); background: rgba(255,255,255,.22); }
+@media (prefers-reduced-motion: reduce) { .social-links a:hover { transform: none; } }
 
 /* ---------------- Deeper mobile responsiveness pass ---------------- */
 @media (max-width: 480px) {
@@ -744,51 +816,6 @@ th { background: #f3f0e6; color: var(--emerald-dark); font-size: 12.5px; text-tr
 
 .stat-card-link { display: block; text-decoration: none; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; cursor: pointer; }
 .stat-card-link:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(11,90,68,.1); border-color: var(--gold-soft); }
-
-/* ---------------- Admin Command Center (dashboard) ---------------- */
-.admin-alert {
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
-    gap: 14px; padding: 18px 22px; border-radius: 18px; margin-bottom: 28px;
-}
-.admin-alert.is-warn { background: #fff4e5; border: 1px solid #f3d19e; color: #7a4d0a; }
-.admin-alert.is-ok { background: #e9f7ef; border: 1px solid #b7e4c7; color: #14532d; }
-.admin-alert-title { font-size: 15.5px; font-weight: 700; margin: 0 0 2px; }
-.admin-alert-sub { font-size: 12.5px; opacity: .85; margin: 0; }
-.admin-alert-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.admin-alert-chip {
-    background: rgba(255,255,255,.75); border-radius: 20px; padding: 7px 15px;
-    font-size: 12.5px; font-weight: 700; text-decoration: none; color: inherit;
-    white-space: nowrap; transition: background .15s ease;
-}
-.admin-alert-chip:hover { background: #fff; }
-
-.admin-section { margin-bottom: 30px; }
-.admin-section-head {
-    display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 700;
-    color: var(--emerald-dark); margin-bottom: 14px; text-transform: uppercase; letter-spacing: .5px;
-}
-.admin-section-head .ic { font-size: 16px; }
-
-.admin-tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; }
-.admin-tile {
-    display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1px solid var(--line);
-    border-radius: 14px; padding: 16px; text-decoration: none; color: var(--charcoal); position: relative;
-    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
-}
-.admin-tile:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(11,90,68,.1); border-color: var(--gold-soft); }
-.admin-tile .admin-tile-icon {
-    font-size: 19px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-    background: var(--ivory); border-radius: 10px; border: 1px solid var(--gold-soft);
-}
-.admin-tile .admin-tile-title { font-size: 13px; font-weight: 700; line-height: 1.35; }
-.admin-tile .admin-tile-badge { position: absolute; top: 12px; right: 12px; }
-.admin-tile.admin-tile-danger .admin-tile-icon { background: var(--danger-bg); border-color: var(--danger-bg); }
-.admin-tile.admin-tile-logout { border-style: dashed; }
-
-@media (max-width: 640px) {
-    .admin-alert { flex-direction: column; align-items: flex-start; }
-    .admin-tile-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
-}
 
 /* ======================================================================
    ISLAMIC SHOP
@@ -1017,131 +1044,3 @@ th { background: #f3f0e6; color: var(--emerald-dark); font-size: 12.5px; text-tr
     .hand-right { right: calc(50% - 90px); }
     .hand-left, .hand-right { width: 100px; height: 75px; }
 }
-
-/* ======================================================================
-   WELCOME OVERLAY — first-visit greeting (Phase 3)
-   Shown once per browser session via welcome.js / sessionStorage.
-   ====================================================================== */
-.welcome-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: rgba(7, 62, 47, 0.55);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    opacity: 0;
-    transition: opacity 220ms ease;
-}
-.welcome-overlay.is-visible { opacity: 1; }
-.welcome-overlay[hidden] { display: none; }
-
-.welcome-card {
-    position: relative;
-    width: 100%;
-    max-width: 400px;
-    background: var(--ivory, #faf8f3);
-    border: 1px solid rgba(197, 168, 106, 0.35);
-    border-radius: var(--radius, 16px);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
-    padding: 32px 24px 28px;
-    text-align: center;
-    transform: translateY(10px) scale(0.98);
-    transition: transform 220ms ease;
-}
-.welcome-overlay.is-visible .welcome-card { transform: translateY(0) scale(1); }
-
-.welcome-close {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    border: none;
-    background: transparent;
-    font-size: 16px;
-    line-height: 1;
-    color: var(--muted, #6b7268);
-    cursor: pointer;
-    padding: 6px;
-    min-width: 32px;
-    min-height: 32px;
-}
-
-.welcome-bismillah {
-    font-family: var(--font-heading, "Playfair Display"), serif;
-    font-size: 15px;
-    letter-spacing: 0.02em;
-    color: var(--gold, #c9a86a);
-    margin: 0 0 10px;
-}
-.welcome-heading {
-    font-family: var(--font-heading, "Playfair Display"), serif;
-    font-size: 24px;
-    color: var(--emerald-dark, #073e2f);
-    margin: 0 0 12px;
-}
-.welcome-message {
-    font-size: 14.5px;
-    line-height: 1.6;
-    color: var(--charcoal, #262622);
-    margin: 0 0 22px;
-}
-.welcome-cta { width: 100%; }
-
-@media (prefers-reduced-motion: reduce) {
-    .welcome-overlay, .welcome-card { transition: none; }
-}
-
-/* ---------------- Payment Waiting Lounge (stepper) ---------------- */
-.wl-stepper {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    max-width: 420px; margin: 22px auto 6px; gap: 4px;
-}
-.wl-step {
-    flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center;
-    position: relative; font-size: 12px; color: var(--muted);
-}
-.wl-step:not(:last-child)::after {
-    content: ""; position: absolute; top: 17px; left: 55%; width: 90%; height: 2px;
-    background: var(--line); z-index: 0;
-}
-.wl-step-circle {
-    width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center;
-    justify-content: center; font-size: 16px; margin-bottom: 8px; position: relative; z-index: 1;
-    background: var(--line); color: var(--muted); border: 2px solid var(--line);
-    transition: background .3s ease, border-color .3s ease, color .3s ease;
-}
-.wl-step-done .wl-step-circle { background: var(--emerald); border-color: var(--emerald); color: #fff; }
-.wl-step-done:not(:last-child)::after { background: var(--emerald); }
-.wl-step-active .wl-step-circle {
-    background: var(--gold); border-color: var(--gold); color: var(--emerald-dark);
-    animation: wlPulse 1.6s ease-in-out infinite;
-}
-.wl-step-label { font-weight: 600; color: var(--charcoal); }
-@keyframes wlPulse {
-    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 45%, transparent); }
-    50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--gold) 0%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-    .wl-step-active .wl-step-circle { animation: none; }
-}
-#wlStatusMessage { font-size: 14px; color: var(--charcoal); margin: 18px 0 0; font-weight: 500; }
-.wl-success-box {
-    display: none; margin-top: 16px; padding: 14px; border-radius: 12px;
-    background: var(--success-bg); color: var(--success); font-weight: 600; font-size: 14px;
-}
-.wl-rejected-box {
-    display: none; margin-top: 16px; padding: 14px; border-radius: 12px;
-    background: var(--danger-bg); color: var(--danger); font-weight: 600; font-size: 14px;
-}
-
-/* ---------------- Footer social icons ---------------- */
-.footer-social-row a {
-    display: flex; align-items: center; justify-content: center;
-    width: 38px; height: 38px; border-radius: 50%;
-    background: rgba(255,255,255,.08); font-size: 17px; padding: 0;
-    border: 1px solid rgba(255,255,255,.15); transition: background .2s ease, transform .15s ease;
-}
-.footer-social-row a:hover { background: rgba(255,255,255,.18); transform: translateY(-2px); }
