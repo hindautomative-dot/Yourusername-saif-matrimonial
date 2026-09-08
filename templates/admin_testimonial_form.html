@@ -25,7 +25,7 @@
         <label>Couple Photo</label>
         <input type="file" name="photo" accept="image/*">
         {% if t and t.photo_filename %}
-        <img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" style="width:80px; height:80px; object-fit:cover; border-radius:50%; margin-top:8px;" loading="lazy" decoding="async">
+        <img src="{{ url_for('static', filename='testimonials/' + t.photo_filename) }}" style="width:80px; height:80px; object-fit:cover; border-radius:50%; margin-top:8px;">
         {% endif %}
 
         <label>Star Rating</label>

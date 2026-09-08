@@ -30,7 +30,7 @@
         {% if order.payment_proof_name %}
         <h3 class="section-label">Payment Proof</h3>
         <a href="{{ url_for('admin_shop_payment_proof', order_id=order.id) }}" target="_blank">
-            <img src="{{ url_for('admin_shop_payment_proof', order_id=order.id) }}" style="max-width:260px; border-radius:10px; border:1px solid var(--line);" loading="lazy" decoding="async">
+            <img src="{{ url_for('admin_shop_payment_proof', order_id=order.id) }}" style="max-width:260px; border-radius:10px; border:1px solid var(--line);">
         </a>
         {% endif %}
 

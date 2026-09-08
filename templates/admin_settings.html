@@ -22,14 +22,14 @@
         <script src="{{ url_for('static', filename='js/photo-resize.js') }}"></script>
         {% if settings.logo_image %}
         <div class="helptext">Current logo:</div>
-        <img src="{{ url_for('static', filename='branding/' + settings.logo_image) }}" style="height:44px; margin-top:6px; border-radius:8px;" loading="lazy" decoding="async">
+        <img src="{{ url_for('static', filename='branding/' + settings.logo_image) }}" style="height:44px; margin-top:6px; border-radius:8px;">
         {% endif %}
 
         <label style="margin-top:14px;">Favicon</label>
         <input type="file" name="favicon" accept="image/*">
         {% if settings.favicon_image %}
         <div class="helptext">Current favicon:</div>
-        <img src="{{ url_for('static', filename='branding/' + settings.favicon_image) }}" style="height:32px; margin-top:6px; border-radius:6px;" loading="lazy" decoding="async">
+        <img src="{{ url_for('static', filename='branding/' + settings.favicon_image) }}" style="height:32px; margin-top:6px; border-radius:6px;">
         {% endif %}
 
         <h3 class="section-label">Contact</h3>
@@ -44,23 +44,6 @@
 
         <label>Location</label>
         <input type="text" name="brand_location" value="{{ settings.brand_location }}">
-
-        <h3 class="section-label">Social Media</h3>
-        <div class="helptext">Leave any field blank to hide that icon. Plain outbound links only — no posting-as-the-business integration.</div>
-        <label>WhatsApp (channel/business page link)</label>
-        <input type="url" name="social_whatsapp" value="{{ settings.social_whatsapp }}" placeholder="https://wa.me/...">
-
-        <label>Instagram</label>
-        <input type="url" name="social_instagram" value="{{ settings.social_instagram }}" placeholder="https://instagram.com/...">
-
-        <label>Facebook</label>
-        <input type="url" name="social_facebook" value="{{ settings.social_facebook }}" placeholder="https://facebook.com/...">
-
-        <label>YouTube</label>
-        <input type="url" name="social_youtube" value="{{ settings.social_youtube }}" placeholder="https://youtube.com/...">
-
-        <label>Telegram</label>
-        <input type="url" name="social_telegram" value="{{ settings.social_telegram }}" placeholder="https://t.me/...">
 
         <h3 class="section-label">Pricing &amp; Payment</h3>
         <label>Single Profile Unlock Price (₹)</label>
@@ -99,7 +82,7 @@
         <div class="helptext">Shown on the Unlock, Package Checkout and Register Yourself payment pages.</div>
         {% if settings.qr_image %}
         <div class="helptext">Current QR code:</div>
-        <img src="{{ url_for('static', filename='branding/' + settings.qr_image) }}" style="height:120px; margin-top:6px; border-radius:8px;" loading="lazy" decoding="async">
+        <img src="{{ url_for('static', filename='branding/' + settings.qr_image) }}" style="height:120px; margin-top:6px; border-radius:8px;">
         {% endif %}
 
         <h3 class="section-label">Appearance — Backgrounds</h3>
@@ -154,6 +137,22 @@
 
         <label>Footer Note (optional, shown after copyright line)</label>
         <input type="text" name="footer_text" value="{{ settings.footer_text }}">
+
+        <h3 class="section-label">Help Shadi</h3>
+        <label>Display Name</label>
+        <input type="text" name="help_shadi_display_name" value="{{ settings.help_shadi_display_name or 'Help Shadi' }}" maxlength="60">
+        <div class="helptext">Shown in the nav, footer, and on the Help Shadi pages. The web address stays /help-shadi either way, so nothing breaks if you rename this.</div>
+
+        <h3 class="section-label">Social Media</h3>
+        <div class="helptext" style="margin-bottom:10px;">Leave any field blank to hide that icon. Only http(s) links are accepted.</div>
+        <label>Instagram URL</label>
+        <input type="url" name="instagram_url" value="{{ settings.instagram_url }}" placeholder="https://instagram.com/yourpage">
+        <label>Facebook URL</label>
+        <input type="url" name="facebook_url" value="{{ settings.facebook_url }}" placeholder="https://facebook.com/yourpage">
+        <label>YouTube URL</label>
+        <input type="url" name="youtube_url" value="{{ settings.youtube_url }}" placeholder="https://youtube.com/@yourchannel">
+        <label>Telegram URL</label>
+        <input type="url" name="telegram_url" value="{{ settings.telegram_url }}" placeholder="https://t.me/yourchannel">
 
         <div style="margin-top:22px; display:flex; gap:10px;">
             <button class="btn btn-primary" type="submit">Save Settings</button>

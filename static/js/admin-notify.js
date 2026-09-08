@@ -10,6 +10,7 @@
   var POLL_MS = 15000;
   var lastCount = null;
   var badge = document.getElementById("adminPendingBadge");
+  var eventsBadge = document.getElementById("dashEventsBadge");
 
   function beep() {
     try {
@@ -52,6 +53,10 @@
         if (badge) {
           badge.textContent = data.pending;
           badge.style.display = data.pending > 0 ? "inline-block" : "none";
+        }
+        if (eventsBadge) {
+          eventsBadge.textContent = data.unread_events;
+          eventsBadge.style.display = data.unread_events > 0 ? "inline-block" : "none";
         }
         if (lastCount !== null && data.pending > lastCount) {
           beep();
